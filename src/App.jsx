@@ -28,6 +28,105 @@ const DEFAULT_SECTIONS = {
 
 const INSPECTION_TYPES = ["定期点検","防火設備点検","総合点検"];
 
+// ─── 単価テーブル ────────────────────────────────────
+const BOKA_DOOR_OPEN  = [2600,1700,1150,1050,950,850,750];
+const BOKA_DOOR_CLOSE = [1750,1150,750,700,650,550,500];
+const BOKA_SHUTTER_ELEC_HOKA = [3500,2900,2100,1800,1750,1650,1650];
+const BOKA_SHUTTER_MAN_HOKA  = [3700,3100,2300,2000,1950,1850,1850];
+const BOKA_SHUTTER_ELEC_SOGO = [3700,3100,2000,2000,1950,1850,1850];
+const BOKA_SHUTTER_MAN_SOGO  = [3900,3300,2500,2200,2150,2050,2050];
+
+const TEIKI_PRICE_MAP = {
+  teiki_m_0_0:[3220,2700,1870,1560,1450,1450], // 重量電動
+  teiki_m_0_1:[3220,2700,1870,1560,1450,1450], // 重量手動
+  teiki_m_0_2:[1870,1870,1140,1140,730,730],   // 重量W6000以上増額
+  teiki_m_1_0:[3010,2490,1660,1450,1350,1350], // 軽量電動
+  teiki_m_1_1:[2800,2380,1560,1350,1240,1140], // 軽量バランス
+  teiki_m_2_0:[1560,1660,1140,1040,930,930],   // 防煙パネル
+  teiki_m_2_1:[1560,1660,1140,1040,930,930],   // 防煙スクリーン
+  teiki_m_2_2:"fixed_520",                      // 防煙可動レール (+520/台固定)
+  teiki_m_2_3:[1450,1450,730,730,410,410],     // 防煙W6000以上増額
+  teiki_m_3_0:[4560,3730,3210,2800,2280,1450], // マイコン
+  teiki_m_4_0:[8220,4150,4150,2700,2490,2490], // 自動ドア片引き
+  teiki_m_4_1:[8220,4150,4150,2700,2490,2490], // 自動ドア引分け
+  teiki_m_5_0:[3320,2700,1870,1560,1450,1450], // サンシリカ電動
+  teiki_m_5_1:[3320,2700,1870,1560,1450,1450], // サンシリカ手動
+  teiki_m_6_0:[3320,2700,1870,1560,1450,1450], // OSD電動
+  teiki_m_6_1:[3010,2490,1660,1450,1350,1350], // OSDバランス(手動)
+  teiki_m_6_2:[1870,1870,1140,1140,730,730],   // OSD W6000以上増額
+  teiki_m_7_0:[3220,1870,1870,1560,1450,1450], // スーパーウォール
+  teiki_m_8_0:[5080,3630,2800,2490,2280,2180], // クイックセイバー
+  teiki_m_9_0:[5080,3630,2800,2490,2280,2180], // 高速シャッター
+  teiki_m_10_0:[2590,1660,1140,1040,930,930],  // スムード電動
+  teiki_m_10_1:[2590,1660,1140,1040,930,930],  // スムード手動
+  teiki_s_1_0:[3320,2180,1870,1660,1560,1560], // 三和ドアコン
+  teiki_s_3_0:[5500,4040,3010,2590,2390,2280], // ハンガードア電動
+  teiki_s_3_1:[3920,2180,1870,1660,1560,1450], // ハンガードア手動
+  teiki_s_4_0:[1560,830,830,830,730,730],       // 一般ドア
+};
+const TEIKI_ADDON_KEYS = new Set(['teiki_m_0_2','teiki_m_2_2','teiki_m_2_3','teiki_m_6_2']);
+
+function getBokaCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:n<=30?5:6;}
+function getTeikiCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:5;}
+function applyMult(v,m){const r=m==="夜間"?1.25:m==="日祝"?1.35:m==="日祝夜間"?1.6:1; return Math.ceil(v*r/10)*10;}
+function calcBoka(form,mult,P={}){
+  const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
+  const sE=+form.bokaShutterElec||0,sM=+form.bokaShutterManual||0;
+  const pl=+form.bokaPostless||0,ms=+form.bokaMaxspace||0,bt=+form.bokaBattery||0;
+  const extras=P.bokaExtra||[];
+  const extraQty=extras.reduce((s,it)=>s+(+form[`bokaExtra_${it.id}`]||0),0);
+  const col=getBokaCol(Math.max(sE+sM+extraQty,dO+dC));
+  const dop=P.boka_door_open||BOKA_DOOR_OPEN, dcp=P.boka_door_close||BOKA_DOOR_CLOSE;
+  const sep=P.boka_shutter_elec||BOKA_SHUTTER_ELEC_HOKA, smp=P.boka_shutter_manual||BOKA_SHUTTER_MAN_HOKA;
+  const fixedExtras=P.fixedExtra||[];
+  let sub=dO*dop[col]+dC*dcp[col]+sE*sep[col]+sM*smp[col]+pl*(P.boka_postless||1000)+ms*(P.boka_maxspace||500)+bt*(P.boka_battery||520);
+  extras.forEach(it=>{sub+=(+form[`bokaExtra_${it.id}`]||0)*(it.prices[col]||0);});
+  fixedExtras.forEach(it=>{sub+=(+form[`bokaFixed_${it.id}`]||0)*(it.value||0);});
+  return applyMult(sub,mult)+(sE+sM)*600+(dO+dC)*200;
+}
+function calcSogo(form,mult,P={}){
+  const dO=+form.sogodoorAnytime||0,dC=+form.sogodoorAlwaysClose||0;
+  const sE=+form.sogoShutterElec||0,sM=+form.sogoShutterManual||0;
+  const pl=+form.sogoPostless||0,ms=+form.sogoMaxspace||0,bt=+form.sogoBattery||0;
+  const extras=P.sogoExtra||[];
+  const extraQty=extras.reduce((s,it)=>s+(+form[`sogoExtra_${it.id}`]||0),0);
+  const col=getBokaCol(Math.max(sE+sM+extraQty,dO+dC));
+  const dop=P.boka_door_open||BOKA_DOOR_OPEN, dcp=P.boka_door_close||BOKA_DOOR_CLOSE;
+  const sep=P.sogo_shutter_elec||BOKA_SHUTTER_ELEC_SOGO, smp=P.sogo_shutter_manual||BOKA_SHUTTER_MAN_SOGO;
+  const fixedExtras=P.fixedExtra||[];
+  let sub=dO*dop[col]+dC*dcp[col]+sE*sep[col]+sM*smp[col]+pl*(P.boka_postless||1000)+ms*(P.boka_maxspace||500)+bt*(P.boka_battery||520);
+  extras.forEach(it=>{sub+=(+form[`sogoExtra_${it.id}`]||0)*(it.prices[col]||0);});
+  fixedExtras.forEach(it=>{sub+=(+form[`sogoFixed_${it.id}`]||0)*(it.value||0);});
+  return applyMult(sub,mult)+(sE+sM)*600+(dO+dC)*200;
+}
+function calcTeiki(form,mult,P={}){
+  const mKeys=TEIKI_GROUPS_MAIN.flatMap((g,gi)=>g.items.map((_,si)=>`teiki_m_${gi}_${si}`));
+  const sKeys=TEIKI_GROUPS_SUB.flatMap((g,gi)=>g.items.map((_,si)=>`teiki_s_${gi}_${si}`));
+  const tge=P.teikiGroupExtra||{};
+  const extraEntries=Object.entries(tge).flatMap(([gk,its])=>its.map(it=>({key:`teikiExtra_${gk}_${it.id}`,prices:it.prices})));
+  let total=0;
+  [...mKeys,...sKeys].forEach(k=>{
+    if(TEIKI_ADDON_KEYS.has(k))return;
+    const p=P[k]||TEIKI_PRICE_MAP[k];
+    if(!p||p==="fixed_520")return;
+    total+=+form[k]||0;
+  });
+  extraEntries.forEach(({key,prices})=>{if(prices?.some(v=>v>0))total+=+form[key]||0;});
+  const col=getTeikiCol(total);
+  let sub=0;
+  [...mKeys,...sKeys].forEach(k=>{
+    const c=+form[k]||0; if(!c)return;
+    const p=P[k]||TEIKI_PRICE_MAP[k]; if(!p)return;
+    if(p==="fixed_520"){sub+=c*(P.teiki_kando_rail||520);return;}
+    sub+=c*p[col];
+  });
+  extraEntries.forEach(({key,prices})=>{
+    const c=+form[key]||0; if(!c||!prices)return;
+    sub+=c*(prices[col]||0);
+  });
+  return applyMult(sub,mult);
+}
+
 // 定期点検サブ項目（メイン・その他）
 const TEIKI_MAIN = [
   "重量シャッター（電動）",
@@ -128,8 +227,28 @@ function getKubun(ds, ts) {
   if (isNight)        return {label:"平日夜間",color:"#81d4fa",bg:"#0a1a2a"};
   return                     {label:"平日",    color:"#a5d6a7",bg:"#0a1a0f"};
 }
+function computeAke(row, allRows) {
+  if (!row.startTime || !row.date) return false;
+  const h = parseInt(row.startTime.split(":")[0], 10);
+  if (isNaN(h) || h < 6 || h >= 12) return false;
+  const d = parseDate(row.date);
+  if (!d) return false;
+  const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+  const prevStr = fmtDate(prev);
+  return allRows.some(r2 => {
+    if (r2.worker !== row.worker || r2.date !== prevStr || !r2.startTime) return false;
+    const h2 = parseInt(r2.startTime.split(":")[0], 10);
+    return !isNaN(h2) && (h2 >= 18 || h2 < 6);
+  });
+}
+
 function sortByDate(rows) {
-  return [...rows].sort((a,b)=>a.date>b.date?1:a.date<b.date?-1:0);
+  return [...rows].sort((a,b)=>{
+    if (a.date>b.date) return 1;
+    if (a.date<b.date) return -1;
+    const ta=a.startTime||"", tb=b.startTime||"";
+    return ta>tb?1:ta<tb?-1:0;
+  });
 }
 
 // ─── localStorage ────────────────────────────────────
@@ -173,31 +292,36 @@ function parseAndpad(file) {
         for(let r=0;r<5;r++)for(let c=0;c<raw[r].length;c++){const m=String(raw[r][c]).match(/(\d{4})\/\d{2}\/\d{2}/);if(m){year=parseInt(m[1]);break;}}
         const result={};
         let i=drIdx+2;
+        let currentWorker=null;
         while(i<raw.length){
           const row=raw[i];
           const pn=String(row[2]||"").trim().replace(/\s/g,"");
           const matched=WORKERS.find(w=>w.replace(/\s/g,"")===pn);
-          if(matched){
+          if(matched) currentWorker=matched;
+          // 「案件名」ラベルが来たらそのスロット（8行）を処理
+          if(currentWorker && String(row[4]||"").trim()==="案件名"){
             const block={};
-            for(let j=i;j<Math.min(i+15,raw.length);j++){const lbl=String(raw[j][4]||"").trim();if(lbl&&!block[lbl])block[lbl]=j;}
-            if(!result[matched])result[matched]=[];
+            for(let j=i;j<Math.min(i+8,raw.length);j++){const lbl=String(raw[j][4]||"").trim();if(lbl)block[lbl]=j;}
+            if(!result[currentWorker])result[currentWorker]=[];
             for(const [ci_s,ds] of Object.entries(dateCols)){
               const ci=parseInt(ci_s);
               const gv=lbl=>{if(block[lbl]===undefined)return "";const v=raw[block[lbl]][ci];return String(v||"").trim();};
-              const genba=gv("案件名"),jikan=gv("時間"),eigyo=gv("営業担当");
+              const genba=gv("案件名"),jikan=gv("時間"),eigyo=gv("営業担当"),soka=gv("所課");
               if(!genba||genba==="nan")continue;
               let st="";
               if(jikan&&jikan!=="時刻未定"){const m=jikan.split("-")[0].trim().match(/^(\d+):(\d+)/);if(m){let h=parseInt(m[1]);if(h>=24)h-=24;st=`${String(h).padStart(2,"0")}:${m[2]}`;}}
               const d=parseDate(`${year}/${ds}`);
-              result[matched].push({
+              const eigyoVal=eigyo!=="nan"?eigyo:"";
+              const sokaVal=soka!=="nan"?soka:"";
+              result[currentWorker].push({
                 id:Math.random().toString(36).slice(2),
                 date:d?fmtDate(d):`${year}/${ds}`, youbi:d?getYoubi(fmtDate(d)):"",
                 startTime:st, genba,
                 subjects:[],inspectionTypes:[],sections:[],eigyoList:[],
-                eigyo:eigyo!=="nan"?eigyo:"",
+                eigyo:eigyoVal, _importSoka:sokaVal,
                 yotei:"",memo:"",reportStatus:"未実施",photoBookStatus:"未実施",expressGo:false,expressReturn:false,expressMid:false,
                 edi:"",hoteifukuri:"",futan:"",futan2:"",ake:false,
-                billingStatus:"未実施",worker:matched,
+                billingStatus:"未実施",worker:currentWorker,
                 assignedBy:"admin",assignedAt:Date.now(),
               });
             }
@@ -298,17 +422,34 @@ const TEIKI_GROUPS_SUB = [
   {parent:"その他", items:[""]},
 ];
 
-function TeikiRow({groupIdx, isMain, parent, items, form, set}) {
+function TeikiRow({groupIdx, isMain, parent, items, form, set, prices}) {
+  const gkey = `${isMain?"m":"s"}_${groupIdx}`;
+  const groupName = prices?.teikiGroupNames?.[gkey] || parent;
+  const extraItems = prices?.teikiGroupExtra?.[gkey] || [];
   return (
     <div style={{marginBottom:6}}>
-      <div style={{color:"#90a4ae",fontSize:11,fontWeight:600,marginBottom:items[0]?3:0}}>{parent}</div>
+      <div style={{color:"#90a4ae",fontSize:11,fontWeight:600,marginBottom:items[0]?3:0}}>{groupName}</div>
       {items.map((sub,si)=>{
         const key = `teiki_${isMain?"m":"s"}_${groupIdx}_${si}`;
+        const name = prices?.teikiNames?.[key] !== undefined ? prices.teikiNames[key] : (sub||"");
         return(
           <div key={key} style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
-            <span style={{color:"#546e7a",fontSize:11,width:80,flexShrink:0}}>{sub||""}</span>
+            <span style={{color:"#546e7a",fontSize:11,width:80,flexShrink:0}}>{name}</span>
             <input type="number" value={form[key]||""} onChange={e=>set(key,e.target.value)}
               style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:4,padding:"4px 6px",
+                fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
+              placeholder="0"/>
+            <span style={{color:"#37474f",fontSize:11,marginLeft:6,width:16}}>台</span>
+          </div>
+        );
+      })}
+      {extraItems.map(it=>{
+        const key=`teikiExtra_${gkey}_${it.id}`;
+        return(
+          <div key={key} style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
+            <span style={{color:"#4fc3f7",fontSize:11,width:80,flexShrink:0}}>{it.name||"追加項目"}</span>
+            <input type="number" value={form[key]||""} onChange={e=>set(key,e.target.value)}
+              style={{background:"#0a1018",border:"1px solid #1e4a5a",borderRadius:4,padding:"4px 6px",
                 fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
               placeholder="0"/>
             <span style={{color:"#37474f",fontSize:11,marginLeft:6,width:16}}>台</span>
@@ -319,14 +460,14 @@ function TeikiRow({groupIdx, isMain, parent, items, form, set}) {
   );
 }
 
-function TeikiForm({form, set}) {
+function TeikiForm({form, set, prices}) {
   const [showSub, setShowSub] = useState(false);
   return (
     <div style={{marginTop:10,padding:"12px",background:"#080e14",borderRadius:8,border:"1px solid #166534"}}>
       <div style={{color:"#86efac",fontSize:10,fontWeight:700,marginBottom:10}}>定期点検 台数入力</div>
       <div>
         {TEIKI_GROUPS_MAIN.map((g,gi)=>(
-          <TeikiRow key={gi} groupIdx={gi} isMain parent={g.parent} items={g.items} form={form} set={set}/>
+          <TeikiRow key={gi} groupIdx={gi} isMain parent={g.parent} items={g.items} form={form} set={set} prices={prices}/>
         ))}
       </div>
       <button onClick={()=>setShowSub(p=>!p)}
@@ -337,7 +478,7 @@ function TeikiForm({form, set}) {
       {showSub&&(
         <div style={{marginTop:8}}>
           {TEIKI_GROUPS_SUB.map((g,gi)=>(
-            <TeikiRow key={gi} groupIdx={gi} isMain={false} parent={g.parent} items={g.items} form={form} set={set}/>
+            <TeikiRow key={gi} groupIdx={gi} isMain={false} parent={g.parent} items={g.items} form={form} set={set} prices={prices}/>
           ))}
         </div>
       )}
@@ -346,7 +487,7 @@ function TeikiForm({form, set}) {
 }
 
 // ─── EDIT MODAL ──────────────────────────────────────
-function EditModal({row, role, sections, onSave, onDelete, onClose}) {
+function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, onClose}) {
   const [form, setForm] = useState({...row});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
@@ -357,6 +498,7 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
   const isAdmin = role==="admin";
   const isOther = form.worker==="その他";
   const canEditBasic = true; // 作業員も全項目編集可
+  const [calcMult, setCalcMult] = useState("なし");
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
@@ -420,9 +562,9 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
                     {[
                       {parent:"ドア",items:[{label:"随時",key:"doorAnytime"},{label:"常閉",key:"doorAlwaysClose"}]},
                       {parent:"シャッター・サンシリカ",items:[{label:"電動",key:"bokaShutterElec"},{label:"手動",key:"bokaShutterManual"}]},
-                      {parent:"マックスペース",items:[{label:"",key:"bokaMaxspace"}]},
-                      {parent:"ポストレス",items:[{label:"",key:"bokaPostless"}]},
-                      {parent:"バッテリー交換",items:[{label:"",key:"bokaBattery"}]},
+                      {parent:prices?.fixedItemNames?.["boka_maxspace"]??"マックスペース",items:[{label:"",key:"bokaMaxspace"}]},
+                      {parent:prices?.fixedItemNames?.["boka_postless"]??"ポストレス",items:[{label:"",key:"bokaPostless"}]},
+                      {parent:prices?.fixedItemNames?.["boka_battery"]??"バッテリー交換",items:[{label:"",key:"bokaBattery"}]},
                     ].map(g=>(
                       <div key={g.parent} style={{marginBottom:8}}>
                         <div style={{color:"#90a4ae",fontSize:11,fontWeight:600,marginBottom:3}}>{g.parent}</div>
@@ -436,6 +578,30 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
                             <span style={{color:"#37474f",fontSize:11,marginLeft:6}}>台</span>
                           </div>
                         ))}
+                      </div>
+                    ))}
+                    {(prices?.bokaExtra||[]).map(it=>(
+                      <div key={it.id} style={{marginBottom:8}}>
+                        <div style={{color:"#ffd54f",fontSize:11,fontWeight:600,marginBottom:3}}>{it.name||"追加項目"}</div>
+                        <div style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
+                          <input type="number" value={form[`bokaExtra_${it.id}`]||""} onChange={e=>set(`bokaExtra_${it.id}`,e.target.value)}
+                            style={{background:"#0a1018",border:"1px solid #ffd54f40",borderRadius:4,padding:"4px 6px",
+                              fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
+                            placeholder="0"/>
+                          <span style={{color:"#37474f",fontSize:11,marginLeft:6}}>台</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(prices?.fixedExtra||[]).map(it=>(
+                      <div key={it.id} style={{marginBottom:8}}>
+                        <div style={{color:"#a5d6a7",fontSize:11,fontWeight:600,marginBottom:3}}>{it.name||"追加費"}</div>
+                        <div style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
+                          <input type="number" value={form[`bokaFixed_${it.id}`]||""} onChange={e=>set(`bokaFixed_${it.id}`,e.target.value)}
+                            style={{background:"#0a1018",border:"1px solid #a5d6a740",borderRadius:4,padding:"4px 6px",
+                              fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
+                            placeholder="0"/>
+                          <span style={{color:"#37474f",fontSize:11,marginLeft:6}}>台</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -448,9 +614,9 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
                     {[
                       {parent:"ドア",items:[{label:"随時",key:"sogodoorAnytime"},{label:"常閉",key:"sogodoorAlwaysClose"}]},
                       {parent:"シャッター・サンシリカ",items:[{label:"電動",key:"sogoShutterElec"},{label:"手動",key:"sogoShutterManual"}]},
-                      {parent:"マックスペース",items:[{label:"",key:"sogoMaxspace"}]},
-                      {parent:"ポストレス",items:[{label:"",key:"sogoPostless"}]},
-                      {parent:"バッテリー交換",items:[{label:"",key:"sogoBattery"}]},
+                      {parent:prices?.fixedItemNames?.["boka_maxspace"]??"マックスペース",items:[{label:"",key:"sogoMaxspace"}]},
+                      {parent:prices?.fixedItemNames?.["boka_postless"]??"ポストレス",items:[{label:"",key:"sogoPostless"}]},
+                      {parent:prices?.fixedItemNames?.["boka_battery"]??"バッテリー交換",items:[{label:"",key:"sogoBattery"}]},
                     ].map(g=>(
                       <div key={g.parent} style={{marginBottom:8}}>
                         <div style={{color:"#90a4ae",fontSize:11,fontWeight:600,marginBottom:3}}>{g.parent}</div>
@@ -466,11 +632,79 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
                         ))}
                       </div>
                     ))}
+                    {(prices?.sogoExtra||[]).map(it=>(
+                      <div key={it.id} style={{marginBottom:8}}>
+                        <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:3}}>{it.name||"追加項目"}</div>
+                        <div style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
+                          <input type="number" value={form[`sogoExtra_${it.id}`]||""} onChange={e=>set(`sogoExtra_${it.id}`,e.target.value)}
+                            style={{background:"#0a1018",border:"1px solid #4fc3f740",borderRadius:4,padding:"4px 6px",
+                              fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
+                            placeholder="0"/>
+                          <span style={{color:"#37474f",fontSize:11,marginLeft:6}}>台</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(prices?.fixedExtra||[]).map(it=>(
+                      <div key={it.id} style={{marginBottom:8}}>
+                        <div style={{color:"#a5d6a7",fontSize:11,fontWeight:600,marginBottom:3}}>{it.name||"追加費"}</div>
+                        <div style={{display:"flex",alignItems:"center",paddingLeft:16,marginBottom:2}}>
+                          <input type="number" value={form[`sogoFixed_${it.id}`]||""} onChange={e=>set(`sogoFixed_${it.id}`,e.target.value)}
+                            style={{background:"#0a1018",border:"1px solid #a5d6a740",borderRadius:4,padding:"4px 6px",
+                              fontSize:12,color:"#cfd8dc",outline:"none",width:60,textAlign:"center",flexShrink:0}}
+                            placeholder="0"/>
+                          <span style={{color:"#37474f",fontSize:11,marginLeft:6}}>台</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {/* 定期点検を下に */}
                 {(form.inspectionTypes||[]).includes("定期点検") && (
-                  <TeikiForm form={form} set={set}/>
+                  <TeikiForm form={form} set={set} prices={prices}/>
+                )}
+
+                {/* 自動計算 */}
+                {(form.inspectionTypes||[]).length>0 && (
+                  <div style={{marginTop:14,padding:"12px",background:"#050b10",borderRadius:8,border:"1px solid #ffd54f40"}}>
+                    <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:10}}>💴 自動計算</div>
+                    <div style={{marginBottom:10}}>
+                      <div style={{color:"#546e7a",fontSize:10,marginBottom:6}}>割増</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {[["なし",""],["夜間","×1.25"],["日祝","×1.35"],["日祝夜間","×1.6"]].map(([key,label])=>(
+                          <button key={key} onClick={()=>setCalcMult(key)}
+                            style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${calcMult===key?"#ffd54f":"#1a2634"}`,
+                              background:calcMult===key?"#1a1500":"transparent",
+                              color:calcMult===key?"#ffd54f":"#546e7a",
+                              fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                            {key}{label&&<span style={{fontSize:9,marginLeft:3,opacity:0.7}}>{label}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {(form.inspectionTypes||[]).includes("防火設備点検")&&(
+                        <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
+                            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>🧮 防火設備点検</span>
+                          <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBoka(form,calcMult,prices||{}).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {(form.inspectionTypes||[]).includes("総合点検")&&(
+                        <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
+                            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>🧮 総合点検</span>
+                          <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcSogo(form,calcMult,prices||{}).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {(form.inspectionTypes||[]).includes("定期点検")&&(
+                        <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #166534",background:"#0a1a0a",
+                            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{color:"#86efac",fontSize:12,fontWeight:700}}>🧮 定期点検</span>
+                          <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcTeiki(form,calcMult,prices||{}).toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -492,7 +726,7 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
 
           {/* 予定金額 */}
           <Field label="予定金額">
-            <input type="number" value={form.yotei||""} onChange={e=>set("yotei",e.target.value)} style={{...mi,width:160}} placeholder="0"/>
+            <input type="text" inputMode="numeric" value={form.yotei||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:160}} placeholder="0"/>
           </Field>
 
           {/* 報告ステータス：その他は非表示 */}
@@ -551,8 +785,18 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
           {isAdmin && (
             <div style={{borderTop:"1px solid #1a2634",paddingTop:14,display:"flex",flexDirection:"column",gap:12}}>
               <div style={{color:"#a5d6a7",fontSize:10,fontWeight:700,letterSpacing:2}}>管理者項目</div>
+              <Field label="作業員">
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {WORKERS.map(w=>(
+                    <button key={w} onClick={()=>set("worker",w)}
+                      style={{padding:"6px 14px",borderRadius:7,border:`1px solid ${form.worker===w?"#4fc3f7":"#1a2634"}`,background:form.worker===w?"#0d2030":"transparent",color:form.worker===w?"#4fc3f7":"#37474f",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              </Field>
               <Field label="請求金額">
-                <input type="number" value={form.edi||""} onChange={e=>set("edi",e.target.value)} style={{...mi,width:180}} placeholder="0"/>
+                <input type="text" inputMode="numeric" value={form.edi||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:180}} placeholder="0"/>
               </Field>
               <Field label="明け">
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -600,6 +844,9 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
         {/* フッター */}
         <div style={{padding:"12px 18px",borderTop:"1px solid #1a2634",display:"flex",justifyContent:"flex-end",gap:10,position:"sticky",bottom:0,background:"#0d1520"}}>
           <button onClick={onClose} style={{...btnBase,background:"transparent",border:"1px solid #1a2634",color:"#546e7a"}}>キャンセル</button>
+          {isAdmin && onDuplicate && (
+            <button onClick={()=>onDuplicate(form)} style={{...btnBase,background:"transparent",border:"1px solid #546e7a",color:"#90a4ae",fontWeight:700}}>📋 複製</button>
+          )}
           <button onClick={()=>onSave(form)} style={{...btnBase,background:"#4fc3f7",color:"#080e14",fontWeight:800,fontSize:14}}>✓ 保存する</button>
         </div>
       </div>
@@ -610,8 +857,40 @@ function EditModal({row, role, sections, onSave, onDelete, onClose}) {
 // ═══════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════
+const GATE_PASSWORD = "Wakou850";
+const ADMIN_PASSWORD = "rmhc229159";
+
+function GateLogin({onPass}) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+  const submit = () => { if(pw===GATE_PASSWORD){onPass();}else{setErr(true);} };
+  return (
+    <div style={{minHeight:"100vh",background:"#080e14",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Noto Sans JP',sans-serif"}}>
+      <div style={{width:320,textAlign:"center"}}>
+        <div style={{color:"#4fc3f7",fontSize:10,letterSpacing:5,fontWeight:700,marginBottom:16}}>WORK MANAGEMENT SYSTEM</div>
+        <div style={{color:"#fff",fontSize:36,fontWeight:900,letterSpacing:-2,marginBottom:32}}>現場日報</div>
+        <input
+          type="password"
+          value={pw}
+          onChange={e=>{setPw(e.target.value);setErr(false);}}
+          onKeyDown={e=>e.key==="Enter"&&submit()}
+          placeholder="パスワードを入力"
+          style={{width:"100%",padding:"14px",borderRadius:8,border:`1px solid ${err?"#ef5350":"#1a2634"}`,background:"#0d1520",color:"#cfd8dc",fontSize:14,fontFamily:"inherit",outline:"none",marginBottom:8,boxSizing:"border-box"}}
+        />
+        {err && <div style={{color:"#ef5350",fontSize:11,marginBottom:8}}>パスワードが違います</div>}
+        <button onClick={submit}
+          style={{width:"100%",padding:"14px",borderRadius:8,border:"none",background:"#4fc3f7",color:"#080e14",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+          入る
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Login({onLogin}) {
   const [adminMode, setAdminMode] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pwError, setPwError] = useState(false);
   return (
     <div style={{minHeight:"100vh",background:"#080e14",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Noto Sans JP',sans-serif",position:"relative",overflow:"hidden"}}>
       {/* Wロゴ透かし：テキストの真上 */}
@@ -644,11 +923,20 @@ function Login({onLogin}) {
         ) : (
           <>
             <div style={{color:"#37474f",fontSize:10,fontWeight:700,letterSpacing:2,marginBottom:16}}>管理者ログイン</div>
-            <button onClick={()=>onLogin({role:"admin",name:"管理者"})}
+            <input
+              type="password"
+              value={pw}
+              onChange={e=>{setPw(e.target.value);setPwError(false);}}
+              onKeyDown={e=>{if(e.key==="Enter"){if(pw===ADMIN_PASSWORD){onLogin({role:"admin",name:"管理者"});}else{setPwError(true);}}}}
+              placeholder="パスワード"
+              style={{width:"100%",marginBottom:8,padding:"12px",borderRadius:8,border:`1px solid ${pwError?"#ef5350":"#1a2634"}`,background:"#0d1520",color:"#cfd8dc",fontSize:14,fontFamily:"inherit",outline:"none"}}
+            />
+            {pwError && <div style={{color:"#ef5350",fontSize:11,marginBottom:8}}>パスワードが違います</div>}
+            <button onClick={()=>{if(pw===ADMIN_PASSWORD){onLogin({role:"admin",name:"管理者"});}else{setPwError(true);}}}
               style={{width:"100%",padding:"14px",borderRadius:8,border:"none",background:"#4fc3f7",color:"#080e14",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               管理者として入る
             </button>
-            <button onClick={()=>setAdminMode(false)} style={{width:"100%",marginTop:8,padding:"10px",borderRadius:8,border:"1px solid #1a2634",background:"transparent",color:"#263238",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>{setAdminMode(false);setPw("");setPwError(false);}} style={{width:"100%",marginTop:8,padding:"10px",borderRadius:8,border:"1px solid #1a2634",background:"transparent",color:"#263238",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
               ← 戻る
             </button>
           </>
@@ -714,17 +1002,208 @@ function SearchBar({searchGenba, setSearchGenba, searchEigyo, setSearchEigyo, se
 // ═══════════════════════════════════════════════════════
 // WORKER VIEW
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// BEST REPORT VIEW
+// ═══════════════════════════════════════════════════════
+function BestReportView({db, setDb, showMsg, isAdmin, allRows, user}) {
+  const DEFAULT_TIERS = ["🥇 特選", "🥈 優秀", "🥉 参考"];
+  const TIER_COLORS = ["#ffd54f","#90a4ae","#ff8a65"];
+  const tierNames = db.bestReportTierNames || DEFAULT_TIERS;
+  const reports = db.bestReports || [];
+  const [pickerTier, setPickerTier] = useState(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const tierRefs = [useRef(null), useRef(null), useRef(null)];
+  const scrollToTier = i => tierRefs[i]?.current?.scrollIntoView({behavior:"smooth", block:"start"});
+
+  const persistBR = (br, tn) => {
+    const nd = {...db, bestReports:br, bestReportTierNames:tn||tierNames};
+    setDb(nd); lsSave(nd);
+  };
+  const addToTier = (tier, row) => {
+    const entry = {id:Date.now().toString(), date:row.date, subjects:row.subjects||[], genba:row.genba||"", memo:row.memo||"", worker:row.worker||"", tier};
+    persistBR([...reports, entry], tierNames);
+    setPickerTier(null); showMsg?.("✓ 追加しました");
+  };
+  const removeEntry = id => persistBR(reports.filter(e=>e.id!==id), tierNames);
+  const setEntryWorker = (id,v) => persistBR(reports.map(e=>e.id===id?{...e,worker:v}:e), tierNames);
+  const setTierName = (i,v) => { const tn=[...tierNames]; tn[i]=v; persistBR(reports,tn); };
+
+  // 投稿機能
+  const posts = db.bestReportPosts || [];
+  const persistPosts = p => { const nd={...db,bestReportPosts:p}; setDb(nd); lsSave(nd); };
+  const [newPost, setNewPost] = useState("");
+  const addPost = () => { if(!newPost.trim())return; persistPosts([{id:Date.now().toString(),content:newPost.trim(),createdAt:fmtDate(new Date()),poster:user?.name||""}, ...posts]); setNewPost(""); showMsg?.("✓ 投稿しました"); };
+  const removePost = id => persistPosts(posts.filter(p=>p.id!==id));
+
+  return (
+    <div style={{padding:16}}>
+      {/* ティアクイックナビ */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {tierNames.map((name,i)=>{
+          const cnt=reports.filter(e=>e.tier===i).length;
+          return(
+            <button key={i} onClick={()=>scrollToTier(i)}
+              style={{padding:"6px 16px",borderRadius:20,border:`1px solid ${TIER_COLORS[i]}60`,background:"transparent",
+                color:TIER_COLORS[i],fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                display:"flex",alignItems:"center",gap:6}}>
+              {name}
+              <span style={{background:`${TIER_COLORS[i]}20`,borderRadius:10,padding:"1px 7px",fontSize:10}}>{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
+      {/* 段名編集（管理者のみ） */}
+      {isAdmin&&(
+        <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",background:"#0a1018",borderRadius:8,padding:"10px 14px",border:"1px solid #1a2634"}}>
+          <span style={{color:"#37474f",fontSize:10,alignSelf:"center"}}>段名</span>
+          {tierNames.map((name,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
+              <input value={name} onChange={e=>setTierName(i,e.target.value)}
+                style={{background:"#080e14",border:`1px solid ${TIER_COLORS[i]}60`,borderRadius:4,padding:"3px 8px",
+                  fontSize:12,color:TIER_COLORS[i],outline:"none",fontFamily:"inherit",width:110}}/>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 投稿エリア（全員） */}
+      <div style={{marginBottom:20,background:"#0a1018",borderRadius:8,padding:"12px 14px",border:"1px solid #1e4a5a"}}>
+        <div style={{color:"#4fc3f7",fontSize:11,fontWeight:700,marginBottom:8}}>📢 投稿</div>
+        <div style={{display:"flex",gap:8,marginBottom:posts.length>0?12:0}}>
+          <input value={newPost} onChange={e=>setNewPost(e.target.value)}
+            placeholder="みんなへのメッセージを入力..."
+            style={{flex:1,background:"#080e14",border:"1px solid #1a2634",borderRadius:5,padding:"7px 10px",fontSize:12,color:"#cfd8dc",outline:"none",fontFamily:"inherit"}}
+            onKeyDown={e=>e.key==="Enter"&&addPost()}/>
+          <button onClick={addPost} style={{padding:"6px 14px",borderRadius:5,border:"1px solid #1e4a5a",background:"#0d2030",color:"#4fc3f7",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>投稿</button>
+        </div>
+        {posts.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {posts.map(p=>(
+              <div key={p.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 12px",background:"#080e14",borderRadius:6,border:"1px solid #1a2634"}}>
+                <div style={{flex:1}}>
+                  {p.poster&&<div style={{color:"#4fc3f7",fontSize:10,fontWeight:700,marginBottom:3}}>👤 {p.poster}</div>}
+                  <div style={{color:"#cfd8dc",fontSize:12,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{p.content}</div>
+                  <div style={{color:"#37474f",fontSize:10,marginTop:3}}>{p.createdAt}</div>
+                </div>
+                {isAdmin&&<button onClick={()=>removePost(p.id)} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #2a1010",background:"transparent",color:"#546e7a",fontSize:10,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 日報ピッカーモーダル（管理者のみ） */}
+      {isAdmin&&pickerTier!==null&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#0d1520",borderRadius:12,border:"1px solid #1a2634",width:"100%",maxWidth:520,maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{color:TIER_COLORS[pickerTier],fontWeight:700,fontSize:13,flexShrink:0}}>{tierNames[pickerTier]}に追加</span>
+              <input value={pickerSearch} onChange={e=>setPickerSearch(e.target.value)} placeholder="現場名で検索..."
+                style={{flex:1,background:"#080e14",border:"1px solid #1a2634",borderRadius:4,padding:"5px 8px",fontSize:12,color:"#cfd8dc",outline:"none",fontFamily:"inherit"}}
+                autoFocus/>
+              <button onClick={()=>setPickerTier(null)} style={{padding:"4px 10px",borderRadius:4,border:"1px solid #1a2634",background:"transparent",color:"#546e7a",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>閉じる</button>
+            </div>
+            <div style={{overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:5}}>
+              {(allRows||[]).filter(r=>!pickerSearch||r.genba?.includes(pickerSearch)).slice(0,120).map(r=>{
+                const d=parseDate(r.date);
+                return(
+                  <div key={r.id} onClick={()=>addToTier(pickerTier,r)}
+                    style={{background:"#080e14",border:"1px solid #1a2634",borderRadius:7,padding:"8px 12px",cursor:"pointer",display:"flex",gap:10,alignItems:"flex-start"}}>
+                    <div style={{color:"#4fc3f7",fontSize:11,fontWeight:700,flexShrink:0,minWidth:60}}>
+                      {d?`${d.getMonth()+1}/${d.getDate()}`:r.date}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:"#fff",fontWeight:700,fontSize:12}}>{r.genba}</div>
+                      {(r.subjects||[]).length>0&&<div style={{color:"#546e7a",fontSize:10}}>{(r.subjects||[]).join(" / ")}</div>}
+                      {r.memo&&<div style={{color:"#78909c",fontSize:10,marginTop:2,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{r.memo}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 各段の表示 */}
+      {tierNames.map((name,ti)=>{
+        const entries=reports.filter(e=>e.tier===ti);
+        return(
+          <div key={ti} ref={tierRefs[ti]} style={{marginBottom:28,scrollMarginTop:60}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingBottom:8,borderBottom:`2px solid ${TIER_COLORS[ti]}30`}}>
+              <span style={{color:TIER_COLORS[ti],fontWeight:700,fontSize:16}}>{name}</span>
+              <span style={{color:"#37474f",fontSize:11}}>{entries.length}件</span>
+              {isAdmin&&(
+                <button onClick={()=>{setPickerTier(ti);setPickerSearch("");}}
+                  style={{marginLeft:"auto",padding:"4px 12px",borderRadius:5,border:`1px solid ${TIER_COLORS[ti]}50`,background:"transparent",color:TIER_COLORS[ti],fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                  ＋ 追加
+                </button>
+              )}
+            </div>
+            {entries.length===0&&<div style={{color:"#1a2634",fontSize:11,padding:"8px 0"}}>まだありません</div>}
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {entries.map(e=>{
+                const d=parseDate(e.date);
+                return(
+                  <div key={e.id} style={{background:"#0a1018",border:`1px solid ${TIER_COLORS[ti]}25`,borderLeft:`3px solid ${TIER_COLORS[ti]}`,borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                      <div style={{color:TIER_COLORS[ti],fontSize:12,fontWeight:700,flexShrink:0,minWidth:60}}>
+                        {d?`${d.getMonth()+1}/${d.getDate()}（${DOW_JP[d.getDay()]}）`:e.date}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:4}}>{e.genba}</div>
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:4}}>
+                          {e.worker&&<span style={{color:"#4fc3f7",fontSize:11,fontWeight:700}}>👤 {e.worker}</span>}
+                          {(e.subjects||[]).map(s=>{const c=SUBJECT_COLORS[s]||{};return <span key={s} style={{background:c.bg||"#1a2634",color:c.light||"#78909c",border:`1px solid ${c.border||"#1a2634"}`,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>{s}</span>;})}
+                        </div>
+                        {e.memo&&(
+                          <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.7,whiteSpace:"pre-wrap",padding:"8px 10px",background:"rgba(0,0,0,0.3)",borderRadius:5,borderLeft:"2px solid #263238"}}>
+                            {e.memo}
+                          </div>
+                        )}
+                      </div>
+                      {isAdmin&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
+                          <select value={e.worker||""} onChange={ev=>setEntryWorker(e.id,ev.target.value)}
+                            style={{background:"#080e14",border:"1px solid #263238",borderRadius:4,padding:"2px 6px",fontSize:10,color:"#4fc3f7",outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
+                            <option value="">作業員を選択</option>
+                            {WORKERS.map(w=><option key={w}>{w}</option>)}
+                          </select>
+                          <button onClick={()=>removeEntry(e.id)} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #2a1010",background:"transparent",color:"#546e7a",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function WorkerView({user, db, setDb, onLogout}) {
+  const [workerTab, setWorkerTab] = useState("list");
   const [editRow, setEditRow] = useState(null);
   const [msg, setMsg] = useState("");
   const [searchGenba, setSearchGenba] = useState("");
   const [searchEigyo, setSearchEigyo] = useState("");
   const [searchDateFrom, setSearchDateFrom] = useState("");
   const [searchDateTo, setSearchDateTo] = useState("");
+  const [filterMonth, setFilterMonth] = useState(()=>{
+    const myR=db.rows?.[user.name]||[];
+    const ms=[...new Set(myR.map(r=>r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
+    const cur=fmtDate(new Date()).slice(0,7);
+    return ms.includes(cur)?cur:(ms[0]||"");
+  });
 
-  const myRows = db.rows?.[user.name] || [];
+  const _allRowsForAke = Object.values(db.rows||{}).flat();
+  const myRows = (db.rows?.[user.name]||[]).map(r=>({...r, ake: r.ake || computeAke(r, _allRowsForAke)}));
   const sections = db.sections || DEFAULT_SECTIONS;
   const showMsg = text => { setMsg(text); setTimeout(()=>setMsg(""),3000); };
+  const workerMonths = [...new Set(myRows.map(r=>r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
 
   const persist = (rows) => {
     const newDb = {...db, rows:{...db.rows, [user.name]:rows}};
@@ -753,10 +1232,16 @@ function WorkerView({user, db, setDb, onLogout}) {
     addedBy:user.name,addedAt:Date.now(),
   });
 
-  const handleReorder = newRows => persist(newRows);
+  const handleReorder = newRows => {
+    if(!newRows.length)return;
+    const date=newRows[0].date;
+    const others=myRows.filter(r=>r.date!==date);
+    persist([...others,...newRows]);
+  };
 
   const sorted = sortByDate(myRows);
   const filtered = sorted.filter(r=>{
+    if (filterMonth && !r.date?.startsWith(filterMonth)) return false;
     if (searchGenba && !r.genba?.includes(searchGenba)) return false;
     if (searchEigyo && !(r.eigyoList||[]).some(e=>e.includes(searchEigyo)) && !(r.eigyo||"").includes(searchEigyo)) return false;
     if (searchDateFrom && r.date < searchDateFrom.replace(/-/g,"/")) return false;
@@ -818,13 +1303,13 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
 }).join("")}
 <tr class='total-row'><td colspan='6' style='text-align:right'>合計 ${rows.length}件</td><td style='text-align:right'>¥${totalY.toLocaleString()}</td></tr>
 </tbody></table></body></html>`;
-    const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),500);
+    const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#080e14",fontFamily:"'Noto Sans JP',sans-serif",color:"#cfd8dc"}}>
       {editRow && (
-        <EditModal row={editRow} role="worker" sections={sections}
+        <EditModal row={editRow} role="worker" sections={sections} prices={db.prices||{}}
           onSave={saveRow}
           onDelete={editRow.addedBy===user.name ? deleteRow : null}
           onClose={()=>setEditRow(null)}/>
@@ -837,12 +1322,28 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{color:"#4fc3f7",fontWeight:800,fontSize:13}}>予定合計: ¥{totalYotei.toLocaleString()}</span>
 
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{...selA,minWidth:110}}>
+            {workerMonths.map(m=><option key={m} value={m}>{m}</option>)}
+          </select>
           <button onClick={addNew} style={{...btnBase,background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a"}}>＋ 現場を追加</button>
           <button onClick={exportWorkerListPDF} style={{...btnBase,background:"#1a0f2a",color:"#ce93d8",border:"1px solid #4a1a6a",fontSize:11}}>🖨️ PDF</button>
           <button onClick={onLogout} style={{...btnBase,background:"transparent",border:"1px solid #1a2634",color:"#263238",fontSize:11}}>ログアウト</button>
         </div>
       </div>
 
+      {/* タブバー */}
+      <div style={{background:"#0a1018",borderBottom:"1px solid #1a2634",display:"flex",overflowX:"auto"}}>
+        {[["list","📋 一覧"],["best","🏆 ベスト日報"]].map(([key,label])=>(
+          <button key={key} onClick={()=>setWorkerTab(key)}
+            style={{padding:"11px 16px",border:"none",background:"transparent",color:workerTab===key?"#4fc3f7":"#37474f",fontWeight:workerTab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:workerTab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {workerTab==="best"&&<BestReportView db={db} setDb={setDb} showMsg={showMsg} isAdmin={false} allRows={[]} user={user}/>}
+
+      {workerTab==="list"&&<>
       <SearchBar searchGenba={searchGenba} setSearchGenba={setSearchGenba} searchEigyo={searchEigyo} setSearchEigyo={setSearchEigyo} searchDateFrom={searchDateFrom} setSearchDateFrom={setSearchDateFrom} searchDateTo={searchDateTo} setSearchDateTo={setSearchDateTo} count={filtered.length} sections={sections}/>
 
       {/* 作業科目別予定金額サマリー */}
@@ -867,7 +1368,19 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
             {myRows.length===0?"「＋ 現場を追加」か管理者の割り当てを待ってください":"該当する現場がありません"}
           </div>
         )}
-        <DraggableList rows={filtered} onReorder={handleReorder} renderCard={row=>{
+        {(()=>{
+          const grp=[];
+          filtered.forEach(r=>{const l=grp[grp.length-1];if(l&&l.date===r.date)l.rows.push(r);else grp.push({date:r.date,rows:[r]});});
+          return grp.map(({date,rows:dr})=>{
+            const dd=parseDate(date);
+            const dy=dr.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
+            return(<div key={date} style={{marginBottom:14}}>
+              <div style={{background:"#080e14",borderRadius:"8px 8px 0 0",borderBottom:"2px solid #1a2634",padding:"7px 14px",display:"flex",alignItems:"center",gap:10}}>
+                <span style={{color:"#4fc3f7",fontWeight:800,fontSize:13}}>{dd?`${dd.getMonth()+1}/${dd.getDate()}（${DOW_JP[dd.getDay()]}）`:date}</span>
+                <span style={{color:"#546e7a",fontSize:11}}>{dr.length}件</span>
+                {dy>0&&<span style={{color:"#81d4fa",fontSize:12}}>予定 ¥{dy.toLocaleString()}</span>}
+              </div>
+              <DraggableList rows={dr} onReorder={handleReorder} renderCard={row=>{
           const k=getKubun(row.date,row.startTime);
           const rs=REPORT_STATUS.find(r=>r.value===row.reportStatus)||REPORT_STATUS[0];
           // 最初の科目の色を背景に使う
@@ -921,12 +1434,6 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
                   )}
                   {(row.sections||[]).length>0&&<div style={{color:"#546e7a",fontSize:10,marginBottom:3}}>{(row.sections||[]).join(" / ")} — {(row.eigyoList||[]).join("・")||"営業未選択"}</div>}
                   {row.yotei&&<div style={{color:"#81d4fa",fontSize:11}}>予定: ¥{Number(row.yotei).toLocaleString()}</div>}
-                  {row.memo&&(
-                    <div style={{marginTop:6,padding:"6px 10px",background:"rgba(0,0,0,0.25)",borderRadius:6,borderLeft:"2px solid #546e7a"}}>
-                      <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:2}}>メモ</div>
-                      <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{row.memo}</div>
-                    </div>
-                  )}
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
                   <span style={{color:row.addedBy?"#263238":"#1a3a1a",fontSize:9,fontWeight:600}}>{row.addedBy?"自己入力":"管理者割当"}</span>
@@ -953,12 +1460,19 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
                   <button onClick={()=>setEditRow(row)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:12}}>✏️ 編集</button>
                 </div>
               </div>
+              {row.memo&&(
+                <div style={{marginTop:8,padding:"6px 10px",background:"rgba(0,0,0,0.25)",borderRadius:6,borderLeft:"2px solid #546e7a"}}>
+                  <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:2}}>メモ</div>
+                  <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{row.memo}</div>
+                </div>
+              )}
             </div>
           );
-        }}/>
+        }}/></div>);});})()}
       </div>
 
       {myRows.length>0&&<div style={{padding:"0 16px 8px",fontSize:10,color:"#1a2634",textAlign:"center"}}>☰ カードをドラッグして同じ日付内の順番を変更できます</div>}
+      </>}
     </div>
   );
 }
@@ -1001,7 +1515,7 @@ function WorkerDashboard({workerStats, exportPDF}) {
 <body><h2>👤 ${s.name} 作業科目別明細</h2>
 <div class="meta">件数: ${s.count}件 ／ 予定合計: ¥${s.yotei.toLocaleString()} ／ 予定合計: ¥${s.edi.toLocaleString()}</div>
 ${subHtml}</body></html>`;
-    const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),500);
+    const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
 
   return (
@@ -1081,7 +1595,12 @@ function AdminView({db, setDb, onLogout}) {
   const [tab, setTab] = useState("list");
   const [editRow, setEditRow] = useState(null);
   const [filterWorker, setFilterWorker] = useState("全員");
-  const [filterMonth, setFilterMonth] = useState("全期間");
+  const [filterMonth, setFilterMonth] = useState(()=>{
+    const rows=Object.values(db.rows||{}).flat();
+    const ms=[...new Set(rows.map(r=>r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
+    const cur=fmtDate(new Date()).slice(0,7);
+    return ms.includes(cur)?cur:(ms[0]||"");
+  });
   const [searchGenba, setSearchGenba] = useState("");
   const [searchEigyo, setSearchEigyo] = useState("");
   const [searchDateFrom, setSearchDateFrom] = useState("");
@@ -1094,6 +1613,14 @@ function AdminView({db, setDb, onLogout}) {
   const toggleRowSelect = (id) => setSelectedRows(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
   const selectAllRows = () => setSelectedRows(new Set((duplicateGenbaRows).map(r=>r.id)));
   const clearRowSelect = () => setSelectedRows(new Set());
+  const deleteSelectedRows = () => {
+    if(selectedRows.size===0) return;
+    if(!window.confirm(`選択した ${selectedRows.size} 件を削除しますか？\nこの操作は元に戻せません。`)) return;
+    const newRows={...db.rows};
+    for(const w of Object.keys(newRows)) newRows[w]=newRows[w].filter(r=>!selectedRows.has(r.id));
+    const newDb={...db,rows:newRows};
+    setDb(newDb); lsSave(newDb); clearRowSelect(); showMsg(`✓ ${selectedRows.size}件を削除しました`);
+  };
   const [pdfColModal, setPdfColModal] = useState(false);
   const [pdfCols, setPdfCols] = useState({worker:true,subject:true,eigyo:true,yotei:true,edi:true,ake:true});
   const togglePdfCol = (key) => setPdfCols(p=>({...p,[key]:!p[key]}));
@@ -1106,6 +1633,12 @@ function AdminView({db, setDb, onLogout}) {
   const [ftBilling, setFtBilling] = useState("");
   const [ftAke, setFtAke] = useState(false);
   const [ftDup, setFtDup] = useState(false);
+  const [dashDailyMonth, setDashDailyMonth] = useState(()=>{
+    const rows=Object.values(db.rows||{}).flat();
+    const ms=[...new Set(rows.map(r=>r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
+    const cur=fmtDate(new Date()).slice(0,7);
+    return ms.includes(cur)?cur:(ms[0]||"");
+  });
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState("");
   const fileRef = useRef(null);
@@ -1114,12 +1647,13 @@ function AdminView({db, setDb, onLogout}) {
   const showMsg = text => { setMsg(text); setTimeout(()=>setMsg(""),3000); };
   const sections = db.sections || DEFAULT_SECTIONS;
 
-  const allRows = Object.values(db.rows||{}).flat();
+  const rawRows = Object.values(db.rows||{}).flat();
+  const allRows = rawRows.map(r=>({...r, ake: r.ake || computeAke(r, rawRows)}));
   const months = [...new Set(allRows.map(r=>r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
 
   const displayRows = sortByDate(allRows.filter(r=>{
     if (filterWorker!=="全員"&&r.worker!==filterWorker) return false;
-    if (filterMonth!=="全期間"&&!r.date?.startsWith(filterMonth)) return false;
+    if (filterMonth&&!r.date?.startsWith(filterMonth)) return false;
     if (searchGenba&&!r.genba?.includes(searchGenba)) return false;
     if (searchEigyo&&!(r.eigyoList||[]).some(e=>e.includes(searchEigyo))&&!(r.eigyo||"").includes(searchEigyo)) return false;
     if (searchDateFrom&&r.date<searchDateFrom.replace(/-/g,"/")) return false;
@@ -1138,11 +1672,14 @@ function AdminView({db, setDb, onLogout}) {
 
   // フィルタータブ用の絞り込み
   const filterTabRows = sortByDate(allRows.filter(r=>{
+    if (filterWorker!=="全員"&&r.worker!==filterWorker) return false;
+    if (filterMonth&&!r.date?.startsWith(filterMonth)) return false;
     if (ftSubjects.length>0 && !ftSubjects.some(s=>(r.subjects||[]).includes(s))) return false;
     if (ftWorkers.length>0 && !ftWorkers.includes(r.worker)) return false;
+    if (ftSection && !(r.eigyoList||[]).some(e=>(sections[ftSection]||[]).includes(e))) return false;
     if (ftEigyo && !(r.eigyoList||[]).includes(ftEigyo)) return false;
-    if (ftReport && r.reportStatus!==ftReport) return false;
-    if (ftBilling && r.billingStatus!==ftBilling) return false;
+    if (ftReport && (r.reportStatus||"未実施")!==ftReport) return false;
+    if (ftBilling && (r.billingStatus||"未実施")!==ftBilling) return false;
     if (ftAke && !r.ake) return false;
     if (ftDup) {
       const gc={};
@@ -1164,11 +1701,30 @@ function AdminView({db, setDb, onLogout}) {
     setImporting(true);
     try {
       const imported=await parseAndpad(file);
+      const sec=db.sections||DEFAULT_SECTIONS;
+      const matchName=(registered,andpad)=>andpad===registered||andpad.startsWith(registered)||registered.startsWith(andpad);
+      const mapRow=r=>{
+        const eigyoVal=r.eigyo||"";
+        const sokaVal=r._importSoka||"";
+        let resolvedSections=[],resolvedEigyo=eigyoVal;
+        if(sokaVal&&sec[sokaVal]){
+          resolvedSections=[sokaVal];
+          const m=sec[sokaVal].find(n=>matchName(n,eigyoVal));
+          if(m) resolvedEigyo=m;
+        } else if(eigyoVal){
+          for(const [sname,names] of Object.entries(sec)){
+            const m=names.find(n=>matchName(n,eigyoVal));
+            if(m){resolvedSections.push(sname);resolvedEigyo=m;}
+          }
+        }
+        const {_importSoka:_,...rest}=r;
+        return {...rest,sections:resolvedSections,eigyoList:resolvedEigyo?[resolvedEigyo]:[]};
+      };
       const newRows={...db.rows};
       for(const [w,rows] of Object.entries(imported)){
         const ex=newRows[w]||[];
         const keys=new Set(ex.map(r=>`${r.date}|${r.genba}`));
-        newRows[w]=[...ex,...rows.filter(r=>!keys.has(`${r.date}|${r.genba}`))];
+        newRows[w]=[...ex,...rows.filter(r=>!keys.has(`${r.date}|${r.genba}`)).map(mapRow)];
       }
       const newDb={...db,rows:newRows};
       setDb(newDb); lsSave(newDb); showMsg("✓ インポート完了");
@@ -1179,6 +1735,10 @@ function AdminView({db, setDb, onLogout}) {
   const saveRow = updated => {
     const newRows={...db.rows};
     const w=updated.worker;
+    // 作業員が変わった場合、他の作業員の配列から同IDを削除
+    for(const wk of Object.keys(newRows)){
+      if(wk!==w) newRows[wk]=newRows[wk].filter(r=>r.id!==updated.id);
+    }
     if(!newRows[w])newRows[w]=[];
     const u={...updated,youbi:getYoubi(updated.date)};
     const exists=newRows[w].some(r=>r.id===u.id);
@@ -1194,9 +1754,50 @@ function AdminView({db, setDb, onLogout}) {
     setDb(newDb); lsSave(newDb); setEditRow(null); showMsg("✓ 削除しました");
   };
 
+  const duplicateRow = row => {
+    const newRow={...row, id:Date.now().toString(), addedBy:"admin", addedAt:Date.now()};
+    const newRows={...db.rows};
+    const w=newRow.worker;
+    if(!newRows[w])newRows[w]=[];
+    newRows[w]=[...newRows[w],newRow];
+    const newDb={...db,rows:newRows};
+    setDb(newDb); lsSave(newDb); setEditRow(null); showMsg("✓ 複製しました");
+  };
+
   const cycleBilling = row => {
     const order=BILLING_STATUS.map(b=>b.value);
-    saveRow({...row,billingStatus:order[(order.indexOf(row.billingStatus)+1)%order.length]});
+    const next=order[(order.indexOf(row.billingStatus)+1)%order.length];
+    if(next==="請求書"&&!window.confirm(`「${row.genba}」を請求書に変更しますか？`))return;
+    if(row.billingStatus==="請求書"&&!window.confirm(`「${row.genba}」の請求書ステータスを解除しますか？`))return;
+    saveRow({...row,billingStatus:next});
+  };
+
+  const DEFAULT_TIERS = ["🥇 特選","🥈 優秀","🥉 参考"];
+  const TIER_COLORS_ADMIN = ["#ffd54f","#90a4ae","#ff8a65"];
+  const bestTierNames = db.bestReportTierNames || DEFAULT_TIERS;
+  const addToBest = (row, tier) => {
+    const br = db.bestReports||[];
+    const idx = br.findIndex(e=>e.rowId===row.id||(e.date===row.date&&e.genba===row.genba&&e.worker===row.worker));
+    const entry = {id:idx>=0?br[idx].id:Date.now().toString(), rowId:row.id, date:row.date, subjects:row.subjects||[], genba:row.genba||"", memo:row.memo||"", worker:row.worker||"", tier};
+    const newBr = idx>=0 ? br.map((e,i)=>i===idx?entry:e) : [...br, entry];
+    const nd={...db,bestReports:newBr};
+    setDb(nd); lsSave(nd); showMsg(`✓ ${bestTierNames[tier]}に追加しました`);
+  };
+  const BestAddBtn = ({row}) => {
+    const br = db.bestReports||[];
+    const existing = br.find(e=>e.rowId===row.id||(e.date===row.date&&e.genba===row.genba&&e.worker===row.worker));
+    const cur = existing ? existing.tier : null;
+    const color = cur!==null ? TIER_COLORS_ADMIN[cur] : "#a5d6a7";
+    return(
+      <select value={cur!==null?String(cur):""}
+        onChange={e=>{if(e.target.value!=="")addToBest(row,parseInt(e.target.value));}}
+        style={{background:cur!==null?`${TIER_COLORS_ADMIN[cur]}15`:"#0a1a0f",
+          border:`1px solid ${cur!==null?TIER_COLORS_ADMIN[cur]+"60":"#1e5a2a"}`,
+          borderRadius:5,padding:"4px 6px",fontSize:10,color,outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
+        <option value="">{cur!==null?"":"🏆 ベスト"}</option>
+        {bestTierNames.map((n,i)=><option key={i} value={i}>{cur===i?"✓ "+n:n}</option>)}
+      </select>
+    );
   };
 
   const handleReorder = newRows => {
@@ -1292,10 +1893,7 @@ ${rows.map(r=>{
   return "<tr><td>"+r.date+"</td><td>"+(r.startTime||"")+(r.endTime?" 〇 "+r.endTime:"")+"</td><td>"+k.label+"</td><td><strong>"+(r.genba||"")+"</strong>"+memo+"</td><td>"+(r.worker||"")+"</td><td>"+(r.subjects||[]).join("/")+(((r.inspectionTypes||[]).length>0?" ("+(r.inspectionTypes||[]).join("・")+")":""))+"</td><td>"+(r.eigyoList||[]).join("・")+"</td><td style='text-align:right'>"+(r.yotei?"¥"+Number(r.yotei).toLocaleString():"")+"</td><td style='text-align:right;font-weight:bold;color:#2e7d32'>"+(r.edi?"¥"+Number(r.edi).toLocaleString():"")+"</td><td style='text-align:center;font-weight:bold'>"+(r.ake?"✓":"")+"</td></tr>";
 }).join("")}
 </tbody></table></body></html>`;
-    const w=window.open("","_blank");
-    w.document.write(html);
-    w.document.close();
-    setTimeout(()=>w.print(),500);
+    const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
 
   const SUBJECT_PRIORITY_ORDER = ["ワコウ","施工管理","点検","工事","調査","その他"];
@@ -1405,7 +2003,7 @@ ${pdfCols.edi?`<td style="text-align:right;font-weight:bold;color:#2e7d32">¥${t
 ${pdfCols.ake?`<td></td>`:""}
 </tr>
 </tbody></table></body></html>`;
-                const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),500);
+                const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
               }} style={{...btnBase,flex:2,background:"#ce93d8",color:"#1a0f2a",fontWeight:800}}>
                 🖨️ PDF出力
               </button>
@@ -1450,7 +2048,7 @@ ${pdfCols.ake?`<td></td>`:""}
         </div>
       )}
 
-      {editRow&&<EditModal row={editRow} role="admin" sections={sections} onSave={saveRow} onDelete={deleteRow} onClose={()=>setEditRow(null)}/>}
+      {editRow&&<EditModal row={editRow} role="admin" sections={sections} prices={db.prices||{}} onSave={saveRow} onDelete={deleteRow} onDuplicate={duplicateRow} onClose={()=>setEditRow(null)}/>}
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{color:"#4fc3f7",fontSize:17,fontWeight:900}}>現場日報</span>
@@ -1465,12 +2063,12 @@ ${pdfCols.ake?`<td></td>`:""}
       </div>
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",flexWrap:"wrap",padding:"0 18px"}}>
-        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
+        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:tab===key?"#4fc3f7":"#37474f",fontWeight:tab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:tab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit"}}>{label}</button>
         ))}
         <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center"}}>
           <select value={filterWorker} onChange={e=>setFilterWorker(e.target.value)} style={selA}><option>全員</option>{WORKERS.map(w=><option key={w}>{w}</option>)}</select>
-          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={selA}><option>全期間</option>{months.map(m=><option key={m}>{m}</option>)}</select>
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={selA}>{months.map(m=><option key={m}>{m}</option>)}</select>
           {tab==="list"&&<button onClick={exportCSV} style={{...btnBase,background:"#0a1f0a",color:"#a5d6a7",border:"1px solid #1a3a1a"}}>📥 CSV出力</button>}
           {tab==="list"&&<button onClick={selectAllRows} style={{...btnBase,background:"transparent",border:"1px solid #1a2634",color:"#546e7a",fontSize:11}}>全選択</button>}
           {tab==="list"&&<button onClick={clearRowSelect} style={{...btnBase,background:"transparent",border:"1px solid #1a2634",color:"#546e7a",fontSize:11}}>解除</button>}
@@ -1479,6 +2077,9 @@ ${pdfCols.ake?`<td></td>`:""}
             setPdfColModal(true);
           }} style={{...btnBase,background:selectedRows.size>0?"#1a0f2a":"#0a0a0a",color:selectedRows.size>0?"#ce93d8":"#263238",border:`1px solid ${selectedRows.size>0?"#4a1a6a":"#1a2634"}`}}>
             🖨️ PDF（{selectedRows.size}件）
+          </button>}
+          {tab==="list"&&<button onClick={deleteSelectedRows} style={{...btnBase,background:selectedRows.size>0?"#3a0a0a":"#0a0a0a",color:selectedRows.size>0?"#ef5350":"#263238",border:`1px solid ${selectedRows.size>0?"#6a1a1a":"#1a2634"}`}}>
+            🗑 削除（{selectedRows.size}件）
           </button>}
         </div>
       </div>
@@ -1546,6 +2147,58 @@ ${pdfCols.ake?`<td></td>`:""}
             </div>
           )}
 
+          {/* ─── 日別・作業員別集計 ─── */}
+          {months.length>0&&(()=>{
+            const ddRows=allRows.filter(r=>dashDailyMonth&&r.date?.startsWith(dashDailyMonth));
+            const days=[...new Set(ddRows.map(r=>r.date).filter(Boolean))].sort().reverse();
+            return(
+              <div style={{background:"#0d1520",borderRadius:10,border:"1px solid #1a2634",overflow:"hidden",marginTop:14}}>
+                <div style={{padding:"12px 16px",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{color:"#4fc3f7",fontWeight:700,fontSize:13}}>日別・作業員別集計</span>
+                  <select value={dashDailyMonth} onChange={e=>setDashDailyMonth(e.target.value)} style={selA}>
+                    {months.map(m=><option key={m}>{m}</option>)}
+                  </select>
+                </div>
+                {days.length===0
+                  ? <div style={{padding:24,color:"#37474f",textAlign:"center",fontSize:12}}>データがありません</div>
+                  : <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead><tr style={{background:"#0a1018"}}>
+                        {["日付","作業員","予定金額","請求金額"].map((h,i)=>(
+                          <th key={h} style={{padding:"8px 12px",color:"#263238",fontWeight:700,fontSize:10,textAlign:i>=2?"right":"left",borderBottom:"1px solid #1a2634"}}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {days.map(day=>{
+                          const dr=ddRows.filter(r=>r.date===day);
+                          const dayY=dr.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
+                          const dayE=dr.reduce((s,r)=>s+(parseFloat(r.edi)||0),0);
+                          const byWorker={};
+                          dr.forEach(r=>{const w=r.worker||"不明";if(!byWorker[w])byWorker[w]={y:0,e:0};byWorker[w].y+=parseFloat(r.yotei)||0;byWorker[w].e+=parseFloat(r.edi)||0;});
+                          const d=parseDate(day);
+                          const dayLabel=d?`${d.getMonth()+1}/${d.getDate()}（${DOW_JP[d.getDay()]}）`:day;
+                          return(<>
+                            <tr key={day} style={{borderBottom:"1px solid #1a2634",background:"#0a1018"}}>
+                              <td style={{padding:"8px 12px",color:"#4fc3f7",fontWeight:700}}>{dayLabel}</td>
+                              <td style={{padding:"8px 12px",color:"#546e7a",fontSize:11}}>{dr.length}件</td>
+                              <td style={{padding:"8px 12px",color:"#81d4fa",fontWeight:700,textAlign:"right"}}>{dayY>0?`¥${dayY.toLocaleString()}`:"-"}</td>
+                              <td style={{padding:"8px 12px",color:"#a5d6a7",fontWeight:700,textAlign:"right"}}>{dayE>0?`¥${dayE.toLocaleString()}`:"-"}</td>
+                            </tr>
+                            {Object.entries(byWorker).map(([w,v])=>(
+                              <tr key={day+w} style={{borderBottom:"1px solid #080e14",background:"#080e14"}}>
+                                <td style={{padding:"5px 12px",color:"#37474f",fontSize:10}}></td>
+                                <td style={{padding:"5px 12px 5px 24px",color:"#90a4ae",fontSize:10}}>└ {w}</td>
+                                <td style={{padding:"5px 12px",color:"#546e7a",fontSize:10,textAlign:"right"}}>{v.y>0?`¥${v.y.toLocaleString()}`:"-"}</td>
+                                <td style={{padding:"5px 12px",color:"#546e7a",fontSize:10,textAlign:"right"}}>{v.e>0?`¥${v.e.toLocaleString()}`:"-"}</td>
+                              </tr>
+                            ))}
+                          </>);
+                        })}
+                      </tbody>
+                    </table>
+                }
+              </div>
+            );
+          })()}
 
         </div>
       )}
@@ -1553,7 +2206,28 @@ ${pdfCols.ake?`<td></td>`:""}
       {tab==="list"&&(
         <div style={{padding:16}}>
           {displayRows.length===0&&<div style={{textAlign:"center",padding:48,color:"#1a2634"}}>データがありません</div>}
-          <DraggableList rows={duplicateGenbaRows} onReorder={handleReorder} renderCard={r=>{
+          {(()=>{
+            const grp=[];
+            duplicateGenbaRows.forEach(r=>{const l=grp[grp.length-1];if(l&&l.date===r.date)l.rows.push(r);else grp.push({date:r.date,rows:[r]});});
+            return grp.map(({date,rows:dr})=>{
+              const dd=parseDate(date);
+              const dy=dr.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
+              const de=dr.reduce((s,r)=>s+(parseFloat(r.edi)||0),0);
+              const wt={};dr.forEach(r=>{if(!wt[r.worker])wt[r.worker]={y:0,e:0};wt[r.worker].y+=parseFloat(r.yotei)||0;wt[r.worker].e+=parseFloat(r.edi)||0;});
+              return(<div key={date} style={{marginBottom:14}}>
+                <div style={{background:"#080e14",borderRadius:"8px 8px 0 0",borderBottom:"2px solid #1e4a5a",padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{color:"#4fc3f7",fontWeight:800,fontSize:13}}>{dd?`${dd.getMonth()+1}/${dd.getDate()}（${DOW_JP[dd.getDay()]}）`:date}</span>
+                  <span style={{color:"#546e7a",fontSize:11}}>{dr.length}件</span>
+                  {dy>0&&<span style={{color:"#81d4fa",fontSize:12}}>予定 ¥{dy.toLocaleString()}</span>}
+                  {de>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:12}}>請求 ¥{de.toLocaleString()}</span>}
+                  {Object.entries(wt).filter(([,v])=>v.y>0||v.e>0).map(([w,v])=>(
+                    <span key={w} style={{background:"#0d1520",borderRadius:4,padding:"2px 8px",fontSize:10,color:"#90a4ae",border:"1px solid #1a2634"}}>
+                      {w}{v.y>0?` 予定¥${v.y.toLocaleString()}`:""}
+                      {v.y>0&&v.e>0?" / ":""}{v.e>0?`請求¥${v.e.toLocaleString()}`:""}
+                    </span>
+                  ))}
+                </div>
+                <DraggableList rows={dr} onReorder={handleReorder} renderCard={r=>{
             const k=getKubun(r.date,r.startTime);
             const isSonotaCard = r.worker==="その他";
             const SUBJECT_PRIORITY = ['ワコウ', '施工管理', '点検', '工事', '調査', 'その他'];
@@ -1561,7 +2235,7 @@ ${pdfCols.ake?`<td></td>`:""}
             const sc = isSonotaCard ? SONOTA_CARD : (SUBJECT_COLORS[mainSubject]||{color:"#546e7a",bg:"#0d1520",border:"#1a2634"});
             const d=parseDate(r.date);
             return(
-              <div style={{background:sc.bg,borderRadius:8,border:`2px solid ${selectedRows.has(r.id)?"#ce93d8":sc.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:isSonotaCard?"0 0 12px #7b1fa240":"none"}}>
+              <div style={{background:sc.bg,borderRadius:8,border:`2px solid ${selectedRows.has(r.id)?"#ce93d8":sc.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:isSonotaCard?"0 0 12px #7b1fa240":"none",opacity:r.billingStatus==="請求書"?0.4:1}}>
                 <input type="checkbox" checked={selectedRows.has(r.id)} onChange={()=>toggleRowSelect(r.id)}
                   style={{accentColor:"#ce93d8",width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
                 {/* 日付 */}
@@ -1601,12 +2275,6 @@ ${pdfCols.ake?`<td></td>`:""}
                     </div>
                   )}
                   <div style={{color:"#546e7a",fontSize:10}}>{(r.eigyoList||[]).join("・")||""}</div>
-                  {r.memo&&(
-                    <div style={{marginTop:5,padding:"5px 8px",background:"rgba(0,0,0,0.25)",borderRadius:5,borderLeft:"2px solid #546e7a"}}>
-                      <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:1}}>メモ</div>
-                      <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.4,whiteSpace:"pre-wrap"}}>{r.memo}</div>
-                    </div>
-                  )}
                 </div>
                 <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                   {r.yotei&&<span style={{color:"#81d4fa",fontSize:11}}>予定¥{Number(r.yotei).toLocaleString()}</span>}
@@ -1624,15 +2292,22 @@ ${pdfCols.ake?`<td></td>`:""}
                     return <span style={{background:pb.bg,color:pb.color,border:`1px solid ${pb.color}50`,borderRadius:5,padding:"2px 8px",fontWeight:700,fontSize:11}}>📷 写真帳 {pb.value==="実施済"?"🟢":"🔴"}</span>;
                   })()}
                   <BillingBadge value={r.billingStatus} editable onClick={()=>cycleBilling(r)}/>
+                  <BestAddBtn row={r}/>
                   <button onClick={()=>setEditRow(r)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 12px"}}>編集</button>
                 </div>
+                {r.memo&&(
+                  <div style={{width:"100%",marginTop:4,padding:"6px 10px",background:"rgba(0,0,0,0.25)",borderRadius:6,borderLeft:"2px solid #546e7a"}}>
+                    <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:2}}>メモ</div>
+                    <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{r.memo}</div>
+                  </div>
+                )}
               </div>
             );
-          }}/>
+          }}/></div>);});})()}
           {displayRows.length>0&&(
             <div style={{marginTop:10,padding:"8px 12px",background:"#0d1520",borderRadius:6,border:"1px solid #1a2634",fontSize:10,color:"#263238",display:"flex",justifyContent:"space-between"}}>
               <span>☰ ドラッグで同じ日付内の順番を変更 ／ 請求ステータスはクリックで切り替え（⚪→🟡→🔴）</span>
-              <span style={{color:"#546e7a"}}>予定合計 ¥{totalYotei.toLocaleString()} / 予定合計 ¥{totalEDI.toLocaleString()}</span>
+              <span style={{color:"#546e7a"}}>予定合計 ¥{totalYotei.toLocaleString()} / 請求合計 ¥{totalEDI.toLocaleString()}</span>
             </div>
           )}
         </div>
@@ -1778,10 +2453,11 @@ ${pdfCols.ake?`<td></td>`:""}
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                       {r.yotei&&<span style={{color:"#81d4fa",fontSize:11}}>予定¥{Number(r.yotei).toLocaleString()}</span>}
-                      {r.edi&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:11}}>予定¥{Number(r.edi).toLocaleString()}</span>}
+                      {r.edi&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:11}}>請求¥{Number(r.edi).toLocaleString()}</span>}
                       {r.ake&&<span style={{background:"#0a1a2a",color:"#81d4fa",border:"1px solid #1e4a5a",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700}}>🌙 明け</span>}
                       <span style={{color:r.reportStatus==="実施済"?"#66bb6a":"#ef5350",fontWeight:700,fontSize:11}}>{r.reportStatus==="実施済"?"🟢":"🔴"} {r.reportStatus}</span>
                       <BillingBadge value={r.billingStatus} editable onClick={()=>cycleBilling(r)}/>
+                      <BestAddBtn row={r}/>
                       <button onClick={()=>setEditRow(r)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 10px"}}>編集</button>
                     </div>
                   </div>
@@ -1793,10 +2469,14 @@ ${pdfCols.ake?`<td></td>`:""}
 
       {/* ─── 点検集計タブ ─── */}
       {tab==="inspection"&&(
-        <InspectionSummary allRows={allRows} exportPDF={exportPDF}/>
+        <InspectionSummary allRows={allRows} exportPDF={exportPDF} prices={db.prices||{}} onEdit={setEditRow}/>
       )}
 
       {/* ─── 祝日編集タブ ─── */}
+      {tab==="best"&&(
+        <BestReportView db={db} setDb={setDb} showMsg={showMsg} isAdmin allRows={allRows} user={{name:"管理者"}}/>
+      )}
+
       {tab==="holiday"&&(
         <HolidayEditor db={db} setDb={setDb} showMsg={showMsg}/>
       )}
@@ -1804,6 +2484,10 @@ ${pdfCols.ake?`<td></td>`:""}
       {/* ─── 営業編集タブ ─── */}
       {tab==="master"&&(
         <MasterEditor db={db} setDb={setDb} showMsg={showMsg}/>
+      )}
+
+      {tab==="prices"&&(
+        <PriceEditor db={db} setDb={setDb} showMsg={showMsg}/>
       )}
 
       {/* ─── データ管理タブ ─── */}
@@ -1940,7 +2624,7 @@ function HolidayEditor({db, setDb, showMsg}) {
 // ═══════════════════════════════════════════════════════
 // INSPECTION SUMMARY
 // ═══════════════════════════════════════════════════════
-function InspectionSummary({allRows, exportPDF}) {
+function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
   const [filterType, setFilterType] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -2009,7 +2693,11 @@ function InspectionSummary({allRows, exportPDF}) {
       });
     }
     const kubun = getKubun(r.date, r.startTime);
-    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime};
+    const mult = kubun?.label || "なし";
+    const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices) : 0;
+    const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
+    const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
+    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, row:r};
   }).sort((a,b)=>a.dates[0]>b.dates[0]?-1:1);
 
   const exportSelected = (genbas) => {
@@ -2051,7 +2739,7 @@ h3.boka{font-size:12px;color:#e65100;margin:12px 0 6px;border-bottom:2px solid #
 @media print{body{margin:12px}}</style></head>
 <body><h2 style="font-size:16px;margin-bottom:16px">📋 点検台数集計（${targets.length}現場）</h2>
 ${allHtml}</body></html>`;
-    const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),500);
+    const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
 
   const exportGenba = (g) => {
@@ -2085,10 +2773,7 @@ h3.boka{font-size:13px;color:#e65100;margin:14px 0 6px;border-bottom:2px solid #
 <div class="meta">所課: ${sectionStr} ／ 営業名: ${eigyoStr}</div>
 ${workerRow?.memo?`<div class="meta" style="margin-top:6px;padding:6px 8px;background:#f9f9f9;border-left:3px solid #ccc">📝 メモ: ${workerRow.memo}</div>`:""}
 ${teikiHtml}${bokaHtml}</body></html>`;
-    const w=window.open("","_blank");
-    w.document.write(html);
-    w.document.close();
-    setTimeout(()=>w.print(),500);
+    const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
 
   return(
@@ -2100,7 +2785,6 @@ ${teikiHtml}${bokaHtml}</body></html>`;
           {["定期点検","防火設備点検","総合点検"].map(t=><option key={t}>{t}</option>)}
         </select>
         <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{...selA,minWidth:120}}>
-          <option value="">全期間</option>
           {months.map(m=><option key={m}>{m}</option>)}
         </select>
         <span style={{color:"#37474f",fontSize:11}}>{genbas.length}現場</span>
@@ -2141,10 +2825,16 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                     </div>
                   </div>
                   </div>
-                  <button onClick={()=>exportGenba(g)}
-                    style={{...btnBase,background:"#1a0f2a",color:"#ce93d8",border:"1px solid #4a1a6a",fontSize:11,padding:"5px 10px",flexShrink:0}}>
-                    🖨️ PDF
-                  </button>
+                  <div style={{display:"flex",gap:6,flexShrink:0}}>
+                    {onEdit&&<button onClick={()=>onEdit(g.row)}
+                      style={{...btnBase,background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 10px"}}>
+                      ✏️ 編集
+                    </button>}
+                    <button onClick={()=>exportGenba(g)}
+                      style={{...btnBase,background:"#1a0f2a",color:"#ce93d8",border:"1px solid #4a1a6a",fontSize:11,padding:"5px 10px"}}>
+                      🖨️ PDF
+                    </button>
+                  </div>
                 </div>
 
                 {/* 定期点検データ */}
@@ -2180,6 +2870,43 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                 {Object.keys(g.teikiData).length===0&&Object.keys(g.bokaData).length===0&&(
                   <div style={{color:"#1e2d3d",fontSize:11}}>台数データなし</div>
                 )}
+
+                {/* 点検金額 */}
+                {(g.bokaAmt>0||g.sogoAmt>0||g.teikiAmt>0)&&(
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
+                    {g.bokaAmt>0&&(
+                      <div style={{background:"#1a0f00",borderRadius:6,padding:"5px 12px",border:"1px solid #f9a82540"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>防火設備点検</div>
+                        <div style={{color:"#ffd54f",fontWeight:900,fontSize:14}}>¥{g.bokaAmt.toLocaleString()}</div>
+                      </div>
+                    )}
+                    {g.sogoAmt>0&&(
+                      <div style={{background:"#0a1a0f",borderRadius:6,padding:"5px 12px",border:"1px solid #4fc3f740"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>総合点検</div>
+                        <div style={{color:"#4fc3f7",fontWeight:900,fontSize:14}}>¥{g.sogoAmt.toLocaleString()}</div>
+                      </div>
+                    )}
+                    {g.teikiAmt>0&&(
+                      <div style={{background:"#0a1a0f",borderRadius:6,padding:"5px 12px",border:"1px solid #86efac40"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>定期点検</div>
+                        <div style={{color:"#86efac",fontWeight:900,fontSize:14}}>¥{g.teikiAmt.toLocaleString()}</div>
+                      </div>
+                    )}
+                    {(g.bokaAmt+g.sogoAmt+g.teikiAmt)>0&&(g.bokaAmt>0)+(g.sogoAmt>0)+(g.teikiAmt>0)>1&&(
+                      <div style={{background:"#0d1520",borderRadius:6,padding:"5px 12px",border:"1px solid #37474f"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>合計</div>
+                        <div style={{color:"#fff",fontWeight:900,fontSize:14}}>¥{(g.bokaAmt+g.sogoAmt+g.teikiAmt).toLocaleString()}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* メモ */}
+                {g.memo&&(
+                  <div style={{marginTop:8,padding:"7px 10px",background:"#080e14",borderRadius:6,border:"1px solid #1a2634",color:"#90a4ae",fontSize:11}}>
+                    📝 {g.memo}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2191,6 +2918,219 @@ ${teikiHtml}${bokaHtml}</body></html>`;
 // ═══════════════════════════════════════════════════════
 // MASTER EDITOR
 // ═══════════════════════════════════════════════════════
+// ─── 単価エディター ───────────────────────────────────
+function PriceEditor({db, setDb, showMsg}) {
+  const P = db.prices || {};
+  const persist = p => { const nd={...db,prices:p}; setDb(nd); lsSave(nd); showMsg("✓ 単価を保存しました"); };
+  const setArr = (key, def, i, v) => { const a=[...(P[key]||def)]; a[i]=parseInt(v)||0; persist({...P,[key]:a}); };
+  const setFixed = (key, def, v) => persist({...P,[key]:parseInt(v)||def});
+  const reset = () => { if(window.confirm("全単価をデフォルトに戻しますか？")){persist({}); showMsg("✓ デフォルトに戻しました");} };
+
+  const inp = {background:"#080e14",border:"1px solid #1a2634",borderRadius:4,padding:"3px 4px",fontSize:11,color:"#cfd8dc",outline:"none",width:58,textAlign:"right",fontFamily:"inherit"};
+  const nameInp = {background:"#080e14",border:"1px solid #1a2634",borderRadius:4,padding:"3px 6px",fontSize:11,color:"#cfd8dc",outline:"none",fontFamily:"inherit",width:128};
+  const th = {padding:"4px 6px",color:"#546e7a",fontSize:10,fontWeight:700,textAlign:"right",whiteSpace:"nowrap"};
+  const td = {padding:"3px 4px"};
+  const addBtn = {padding:"4px 10px",borderRadius:5,border:"1px solid #263238",background:"transparent",color:"#546e7a",fontSize:10,cursor:"pointer",fontFamily:"inherit"};
+  const delBtn = {padding:"2px 7px",borderRadius:4,border:"1px solid #2a1010",background:"transparent",color:"#ef5350",fontSize:10,cursor:"pointer",fontFamily:"inherit"};
+
+  const BCOLS = ["1台","2台","3-6","7-10","11-14","15-30","31+"];
+  const TCOLS = ["1台","2台","3-6","7-10","11-14","15+"];
+  const ZERO7 = [0,0,0,0,0,0,0];
+  const ZERO6 = [0,0,0,0,0,0];
+
+  const setBokaItemName = (key,v) => persist({...P,bokaItemNames:{...(P.bokaItemNames||{}),[key]:v}});
+  const setSogoItemName = (key,v) => persist({...P,sogoItemNames:{...(P.sogoItemNames||{}),[key]:v}});
+  const setFixedItemName = (key,v) => persist({...P,fixedItemNames:{...(P.fixedItemNames||{}),[key]:v}});
+  const addFixedExtra = () => { const id=Date.now().toString(); persist({...P,fixedExtra:[...(P.fixedExtra||[]),{id,name:"追加費",value:0}]}); };
+  const removeFixedExtra = id => persist({...P,fixedExtra:(P.fixedExtra||[]).filter(it=>it.id!==id)});
+  const setFixedExtraName = (id,v) => persist({...P,fixedExtra:(P.fixedExtra||[]).map(it=>it.id===id?{...it,name:v}:it)});
+  const setFixedExtraValue = (id,v) => persist({...P,fixedExtra:(P.fixedExtra||[]).map(it=>it.id===id?{...it,value:parseInt(v)||0}:it)});
+  const addBokaExtra = () => { const id=Date.now().toString(); persist({...P,bokaExtra:[...(P.bokaExtra||[]),{id,name:"追加項目",prices:ZERO7}]}); };
+  const removeBokaExtra = id => persist({...P,bokaExtra:(P.bokaExtra||[]).filter(it=>it.id!==id)});
+  const setBokaExtraName = (id,v) => persist({...P,bokaExtra:(P.bokaExtra||[]).map(it=>it.id===id?{...it,name:v}:it)});
+  const setBokaExtraPrice = (id,i,v) => { const cur=(P.bokaExtra||[]).find(it=>it.id===id); if(!cur)return; const p=[...cur.prices]; p[i]=parseInt(v)||0; persist({...P,bokaExtra:(P.bokaExtra||[]).map(it=>it.id===id?{...it,prices:p}:it)}); };
+  const addSogoExtra = () => { const id=Date.now().toString(); persist({...P,sogoExtra:[...(P.sogoExtra||[]),{id,name:"追加項目",prices:ZERO7}]}); };
+  const removeSogoExtra = id => persist({...P,sogoExtra:(P.sogoExtra||[]).filter(it=>it.id!==id)});
+  const setSogoExtraName = (id,v) => persist({...P,sogoExtra:(P.sogoExtra||[]).map(it=>it.id===id?{...it,name:v}:it)});
+  const setSogoExtraPrice = (id,i,v) => { const cur=(P.sogoExtra||[]).find(it=>it.id===id); if(!cur)return; const p=[...cur.prices]; p[i]=parseInt(v)||0; persist({...P,sogoExtra:(P.sogoExtra||[]).map(it=>it.id===id?{...it,prices:p}:it)}); };
+  const addTeikiExtra = gkey => { const id=Date.now().toString(); const tge={...(P.teikiGroupExtra||{})}; tge[gkey]=[...(tge[gkey]||[]),{id,name:"追加項目",prices:ZERO6}]; persist({...P,teikiGroupExtra:tge}); };
+  const removeTeikiExtra = (gkey,id) => { const tge={...(P.teikiGroupExtra||{})}; tge[gkey]=(tge[gkey]||[]).filter(it=>it.id!==id); persist({...P,teikiGroupExtra:tge}); };
+  const setTeikiExtraName = (gkey,id,v) => { const tge={...(P.teikiGroupExtra||{})}; tge[gkey]=(tge[gkey]||[]).map(it=>it.id===id?{...it,name:v}:it); persist({...P,teikiGroupExtra:tge}); };
+  const setTeikiExtraPrice = (gkey,id,i,v) => { const tge={...(P.teikiGroupExtra||{})}; const cur=(tge[gkey]||[]).find(it=>it.id===id); if(!cur)return; const p=[...cur.prices]; p[i]=parseInt(v)||0; tge[gkey]=(tge[gkey]||[]).map(it=>it.id===id?{...it,prices:p}:it); persist({...P,teikiGroupExtra:tge}); };
+
+  const setName = (key,v) => persist({...P,teikiNames:{...P.teikiNames,[key]:v}});
+  const setGroupName = (gkey,v) => persist({...P,teikiGroupNames:{...P.teikiGroupNames,[gkey]:v}});
+
+  const Section = ({title,color}) => (
+    <div style={{color,fontSize:11,fontWeight:700,marginBottom:6,marginTop:16,letterSpacing:1}}>{title}</div>
+  );
+  const EditableArrRow = ({lbl,pkey,def,nameKey,nameStore,onSetName}) => (
+    <tr>
+      <td style={td}><input value={nameStore?.[nameKey]??lbl} onChange={e=>onSetName(nameKey,e.target.value)} style={nameInp}/></td>
+      {(P[pkey]||def).map((v,i)=><td key={i} style={td}><input type="number" value={v} onChange={e=>setArr(pkey,def,i,e.target.value)} style={inp}/></td>)}
+      <td style={td}></td>
+    </tr>
+  );
+
+  return (
+    <div style={{padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{color:"#ffd54f",fontWeight:700,fontSize:13}}>💰 単価編集</div>
+        <button onClick={reset} style={{padding:"5px 12px",borderRadius:6,border:"1px solid #2a1010",background:"transparent",color:"#546e7a",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>デフォルトに戻す</button>
+      </div>
+
+      {/* 防火設備点検 */}
+      <Section title="■ 防火設備点検" color="#ffd54f"/>
+      <div style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse"}}>
+          <thead><tr><th style={{...th,textAlign:"left",minWidth:140}}>項目名</th>{BCOLS.map(c=><th key={c} style={th}>{c}</th>)}<th style={th}></th></tr></thead>
+          <tbody>
+            <EditableArrRow lbl="常時開放式ドア" pkey="boka_door_open" def={BOKA_DOOR_OPEN} nameKey="boka_door_open" nameStore={P.bokaItemNames} onSetName={setBokaItemName}/>
+            <EditableArrRow lbl="常時閉鎖式ドア" pkey="boka_door_close" def={BOKA_DOOR_CLOSE} nameKey="boka_door_close" nameStore={P.bokaItemNames} onSetName={setBokaItemName}/>
+            <EditableArrRow lbl="電動シャッター" pkey="boka_shutter_elec" def={BOKA_SHUTTER_ELEC_HOKA} nameKey="boka_shutter_elec" nameStore={P.bokaItemNames} onSetName={setBokaItemName}/>
+            <EditableArrRow lbl="手動シャッター" pkey="boka_shutter_manual" def={BOKA_SHUTTER_MAN_HOKA} nameKey="boka_shutter_manual" nameStore={P.bokaItemNames} onSetName={setBokaItemName}/>
+            {(P.bokaExtra||[]).map(it=>(
+              <tr key={it.id}>
+                <td style={td}><input value={it.name} onChange={e=>setBokaExtraName(it.id,e.target.value)} style={{...nameInp,borderColor:"#ffd54f40",color:"#ffd54f"}}/></td>
+                {it.prices.map((v,i)=><td key={i} style={td}><input type="number" value={v} onChange={e=>setBokaExtraPrice(it.id,i,e.target.value)} style={{...inp,color:v===0?"#37474f":"#cfd8dc"}}/></td>)}
+                <td style={td}><button onClick={()=>removeBokaExtra(it.id)} style={delBtn}>✕</button></td>
+              </tr>
+            ))}
+            <tr><td colSpan={BCOLS.length+2} style={{padding:"6px 4px"}}>
+              <button onClick={addBokaExtra} style={addBtn}>＋ 項目追加</button>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* 総合点検 */}
+      <Section title="■ 総合点検（シャッターのみ、ドアは防火と同じ）" color="#4fc3f7"/>
+      <div style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse"}}>
+          <thead><tr><th style={{...th,textAlign:"left",minWidth:140}}>項目名</th>{BCOLS.map(c=><th key={c} style={th}>{c}</th>)}<th style={th}></th></tr></thead>
+          <tbody>
+            <EditableArrRow lbl="電動シャッター" pkey="sogo_shutter_elec" def={BOKA_SHUTTER_ELEC_SOGO} nameKey="sogo_shutter_elec" nameStore={P.sogoItemNames} onSetName={setSogoItemName}/>
+            <EditableArrRow lbl="手動シャッター" pkey="sogo_shutter_manual" def={BOKA_SHUTTER_MAN_SOGO} nameKey="sogo_shutter_manual" nameStore={P.sogoItemNames} onSetName={setSogoItemName}/>
+            {(P.sogoExtra||[]).map(it=>(
+              <tr key={it.id}>
+                <td style={td}><input value={it.name} onChange={e=>setSogoExtraName(it.id,e.target.value)} style={{...nameInp,borderColor:"#4fc3f740",color:"#4fc3f7"}}/></td>
+                {it.prices.map((v,i)=><td key={i} style={td}><input type="number" value={v} onChange={e=>setSogoExtraPrice(it.id,i,e.target.value)} style={{...inp,color:v===0?"#37474f":"#cfd8dc"}}/></td>)}
+                <td style={td}><button onClick={()=>removeSogoExtra(it.id)} style={delBtn}>✕</button></td>
+              </tr>
+            ))}
+            <tr><td colSpan={BCOLS.length+2} style={{padding:"6px 4px"}}>
+              <button onClick={addSogoExtra} style={addBtn}>＋ 項目追加</button>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* 固定追加費 */}
+      <Section title="■ 固定追加費（防火・総合）" color="#a5d6a7"/>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {[["ポストレス/台","boka_postless",1000],["マックスペース/台","boka_maxspace",500],["バッテリー交換/台","boka_battery",520]].map(([lbl,key,def])=>(
+          <div key={key} style={{display:"flex",alignItems:"center",gap:6}}>
+            <input value={P.fixedItemNames?.[key]??lbl} onChange={e=>setFixedItemName(key,e.target.value)}
+              style={{...nameInp,width:160}}/>
+            <input type="number" value={P[key]??def} onChange={e=>setFixed(key,def,e.target.value)} style={{...inp,width:70}}/>
+            <span style={{color:"#37474f",fontSize:11}}>円/台</span>
+          </div>
+        ))}
+        {(P.fixedExtra||[]).map(it=>(
+          <div key={it.id} style={{display:"flex",alignItems:"center",gap:6}}>
+            <input value={it.name} onChange={e=>setFixedExtraName(it.id,e.target.value)}
+              style={{...nameInp,width:160,borderColor:"#a5d6a740",color:"#a5d6a7"}}/>
+            <input type="number" value={it.value} onChange={e=>setFixedExtraValue(it.id,e.target.value)} style={{...inp,width:70}}/>
+            <span style={{color:"#37474f",fontSize:11}}>円/台</span>
+            <button onClick={()=>removeFixedExtra(it.id)} style={delBtn}>✕</button>
+          </div>
+        ))}
+        <div><button onClick={addFixedExtra} style={addBtn}>＋ 項目追加</button></div>
+      </div>
+      <Section title="■ 固定追加費（定期）" color="#a5d6a7"/>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{color:"#90a4ae",fontSize:11}}>可動レール/台</span>
+        <input type="number" value={P.teiki_kando_rail??520} onChange={e=>setFixed("teiki_kando_rail",520,e.target.value)} style={{...inp,width:70}}/>
+        <span style={{color:"#37474f",fontSize:11}}>円/台</span>
+      </div>
+
+      {/* 定期点検 */}
+      <Section title="■ 定期点検（全項目）" color="#86efac"/>
+      <div style={{fontSize:10,color:"#37474f",marginBottom:10}}>項目名・単価を直接編集できます。単価0は計算に含まれません。</div>
+      {[
+        ...TEIKI_GROUPS_MAIN.map((g,gi)=>({g,gi,isMain:true})),
+        ...TEIKI_GROUPS_SUB.map((g,gi)=>({g,gi,isMain:false})),
+      ].map(({g,gi,isMain})=>{
+        const gkey=`${isMain?"m":"s"}_${gi}`;
+        const groupName=P.teikiGroupNames?.[gkey]||g.parent;
+        const groupExtra=P.teikiGroupExtra?.[gkey]||[];
+        return(
+          <div key={gkey} style={{marginBottom:14,background:"#0a1018",borderRadius:8,border:"1px solid #1a2634",padding:"10px 12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <input value={groupName} onChange={e=>setGroupName(gkey,e.target.value)}
+                style={{background:"#080e14",border:"1px solid #263238",borderRadius:4,padding:"3px 6px",fontSize:12,color:"#4fc3f7",outline:"none",fontFamily:"inherit",fontWeight:700,width:200}}/>
+              <span style={{color:"#37474f",fontSize:10}}>グループ名</span>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{borderCollapse:"collapse",width:"100%"}}>
+                <thead><tr>
+                  <th style={{...th,textAlign:"left",minWidth:140}}>項目名</th>
+                  {TCOLS.map(c=><th key={c} style={th}>{c}</th>)}
+                  <th style={th}></th>
+                </tr></thead>
+                <tbody>
+                  {g.items.map((sub,si)=>{
+                    const key=`teiki_${isMain?"m":"s"}_${gi}_${si}`;
+                    const defPrice=TEIKI_PRICE_MAP[key];
+                    const isFixed=typeof defPrice==="string";
+                    const defaultName=sub||(g.items.length===1?"":String(si+1));
+                    const name=P.teikiNames?.[key]!==undefined?P.teikiNames[key]:defaultName;
+                    const priceArr=P[key]||(Array.isArray(defPrice)?defPrice:ZERO6);
+                    const hasDef=!!defPrice&&!isFixed;
+                    return(
+                      <tr key={key} style={{background:hasDef?"transparent":"#0d1a0d30"}}>
+                        <td style={td}>
+                          <input value={name} onChange={e=>setName(key,e.target.value)}
+                            style={{background:"#080e14",border:"1px solid #1a2634",borderRadius:4,padding:"3px 6px",
+                              fontSize:11,color:"#cfd8dc",outline:"none",fontFamily:"inherit",width:128}}/>
+                        </td>
+                        {isFixed?(
+                          <td colSpan={6} style={{...td,color:"#546e7a",fontSize:11}}>
+                            固定 <input type="number" value={P.teiki_kando_rail||520}
+                              onChange={e=>setFixed("teiki_kando_rail",520,e.target.value)} style={{...inp,width:60}}/> 円/台
+                          </td>
+                        ):priceArr.map((v,i)=>(
+                          <td key={i} style={td}>
+                            <input type="number" value={v}
+                              onChange={e=>setArr(key,Array.isArray(defPrice)?defPrice:ZERO6,i,e.target.value)}
+                              style={{...inp,color:v===0?"#37474f":"#cfd8dc"}}/>
+                          </td>
+                        ))}
+                        <td style={td}></td>
+                      </tr>
+                    );
+                  })}
+                  {groupExtra.map(it=>(
+                    <tr key={it.id}>
+                      <td style={td}><input value={it.name} onChange={e=>setTeikiExtraName(gkey,it.id,e.target.value)}
+                        style={{...nameInp,borderColor:"#4fc3f740",color:"#4fc3f7"}}/></td>
+                      {it.prices.map((v,i)=><td key={i} style={td}><input type="number" value={v} onChange={e=>setTeikiExtraPrice(gkey,it.id,i,e.target.value)} style={{...inp,color:v===0?"#37474f":"#cfd8dc"}}/></td>)}
+                      <td style={td}><button onClick={()=>removeTeikiExtra(gkey,it.id)} style={delBtn}>✕</button></td>
+                    </tr>
+                  ))}
+                  <tr><td colSpan={TCOLS.length+2} style={{padding:"6px 4px"}}>
+                    <button onClick={()=>addTeikiExtra(gkey)} style={addBtn}>＋ 項目追加</button>
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MasterEditor({db, setDb, showMsg}) {
   const sections = db.sections || DEFAULT_SECTIONS;
   const [newNames, setNewNames] = useState({});
@@ -2199,6 +3139,8 @@ function MasterEditor({db, setDb, showMsg}) {
   const dragItem = useRef(null);
   const [dragOver, setDragOver] = useState(null);
   const [confirmMove, setConfirmMove] = useState(null);
+  const sectionDragItem = useRef(null);
+  const [sectionDragOver, setSectionDragOver] = useState(null);
 
   const persist = (newSections) => {
     const newDb = {...db, sections:newSections};
@@ -2259,6 +3201,29 @@ function MasterEditor({db, setDb, showMsg}) {
     if (!window.confirm(`「${name}」を${section}から削除しますか？`)) return;
     persist({...sections, [section]:(sections[section]||[]).filter(n=>n!==name)});
     showMsg(`✓ 「${name}」を削除しました`);
+  };
+
+  const handleSectionDragStart = (section) => { sectionDragItem.current = section; };
+  const handleSectionDragOver = (e, section) => {
+    e.preventDefault();
+    if (sectionDragItem.current && sectionDragItem.current !== section) setSectionDragOver(section);
+  };
+  const handleSectionDrop = (e, toSection) => {
+    e.preventDefault();
+    setSectionDragOver(null);
+    const from = sectionDragItem.current;
+    if (!from || from === toSection) { sectionDragItem.current=null; return; }
+    const keys = Object.keys(sections);
+    const fromIdx = keys.indexOf(from);
+    const toIdx = keys.indexOf(toSection);
+    const newKeys = [...keys];
+    newKeys.splice(fromIdx, 1);
+    newKeys.splice(toIdx, 0, from);
+    const newSections = {};
+    newKeys.forEach(k => { newSections[k] = sections[k]; });
+    persist(newSections);
+    sectionDragItem.current = null;
+    showMsg("✓ 所課の順番を変更しました");
   };
 
   const handleDragStart = (name, fromSection) => {
@@ -2345,12 +3310,16 @@ function MasterEditor({db, setDb, showMsg}) {
         {Object.entries(sections).map(([section, names])=>(
           <div key={section}
             data-section={section}
-            onDragOver={e=>handleDragOver(e,section)}
-            onDrop={e=>handleDrop(e,section)}
-            onDragLeave={()=>setDragOver(null)}
-            style={{background:dragOver===section?"#0d2030":"#0d1520",borderRadius:10,border:`1px solid ${dragOver===section?"#4fc3f7":"#1a2634"}`,padding:14,transition:"all 0.15s"}}>
+            draggable
+            onDragStart={()=>handleSectionDragStart(section)}
+            onDragOver={e=>{ handleDragOver(e,section); handleSectionDragOver(e,section); }}
+            onDrop={e=>{ if(dragItem.current) handleDrop(e,section); else handleSectionDrop(e,section); }}
+            onDragLeave={()=>{ setDragOver(null); setSectionDragOver(null); }}
+            onDragEnd={()=>{ sectionDragItem.current=null; setSectionDragOver(null); }}
+            style={{background:(dragOver===section||sectionDragOver===section)?"#0d2030":"#0d1520",borderRadius:10,border:`1px solid ${sectionDragOver===section?"#a5d6a7":dragOver===section?"#4fc3f7":"#1a2634"}`,padding:14,transition:"all 0.15s",cursor:"grab"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,paddingBottom:8,borderBottom:"1px solid #1a2634"}}>
-              <div style={{color:"#4fc3f7",fontWeight:700,fontSize:12}}>
+              <div style={{color:"#4fc3f7",fontWeight:700,fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:"#263238",fontSize:14,cursor:"grab"}}>☰</span>
                 {section}
                 <span style={{color:"#263238",fontWeight:400,fontSize:10,marginLeft:6}}>{(names||[]).length}人</span>
               </div>
@@ -2407,8 +3376,9 @@ function MasterEditor({db, setDb, showMsg}) {
 // ═══════════════════════════════════════════════════════
 export default function App() {
   const [db, setDb] = useState(()=>lsLoad());
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(()=>{try{const s=sessionStorage.getItem("session");return s?JSON.parse(s):null;}catch{return null;}});
   const [synced, setSynced] = useState(false);
+  const [gateOk, setGateOk] = useState(()=>sessionStorage.getItem("gateOk")==="1");
 
   useEffect(()=>{
     const unsub = onSnapshot(doc(firestore,"db","main"), snap=>{
@@ -2430,11 +3400,13 @@ export default function App() {
     </div>
   );
 
+  if(!gateOk) return <GateLogin onPass={()=>{sessionStorage.setItem("gateOk","1");setGateOk(true);}}/>;
+
   return !session
-    ? <Login onLogin={setSession}/>
+    ? <Login onLogin={s=>{sessionStorage.setItem("session",JSON.stringify(s));setSession(s);}}/>
     : session.role==="admin"
-      ? <AdminView db={db} setDb={setDb} onLogout={()=>setSession(null)}/>
-      : <WorkerView user={session} db={db} setDb={setDb} onLogout={()=>setSession(null)}/>;
+      ? <AdminView db={db} setDb={setDb} onLogout={()=>{sessionStorage.removeItem("session");setSession(null);}}/>
+      : <WorkerView user={session} db={db} setDb={setDb} onLogout={()=>{sessionStorage.removeItem("session");setSession(null);}}/>;
 }
 
 const btnBase={padding:"8px 14px",borderRadius:7,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"};

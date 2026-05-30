@@ -1,2 +1,4 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:#080e14;color:#cfd8dc;font-family:'Noto Sans JP',sans-serif}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}

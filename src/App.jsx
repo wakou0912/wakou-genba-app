@@ -1649,7 +1649,14 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
 
       {/* タブバー */}
       <div style={{background:"#0a1018",borderBottom:"1px solid #1a2634",display:"flex",overflowX:"auto"}}>
+        {[["list","📋 日報"],["manual","📘 技術資料"]].map(([key,label])=>(
+          <button key={key} onClick={()=>setWorkerTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:workerTab===key?"#4fc3f7":"#37474f",fontWeight:workerTab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:workerTab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit",whiteSpace:"nowrap"}}>{label}</button>
+        ))}
       </div>
+
+      {workerTab==="manual"&&(
+        <iframe src={import.meta.env.BASE_URL + 'shutter-manual.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="業務マニュアル"/>
+      )}
 
       {workerTab==="list"&&<>
       <SearchBar searchGenba={searchGenba} setSearchGenba={setSearchGenba} searchEigyo={searchEigyo} setSearchEigyo={setSearchEigyo} searchDateFrom={searchDateFrom} setSearchDateFrom={setSearchDateFrom} searchDateTo={searchDateTo} setSearchDateTo={setSearchDateTo} count={filtered.length} sections={sections}/>
@@ -2371,7 +2378,7 @@ ${pdfCols.ake?`<td></td>`:""}
       </div>
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",flexWrap:"wrap",padding:"0 18px"}}>
-        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
+        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["manual","📘 技術資料"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:tab===key?"#4fc3f7":"#37474f",fontWeight:tab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:tab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit"}}>{label}</button>
         ))}
         <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center"}}>
@@ -2784,6 +2791,10 @@ ${pdfCols.ake?`<td></td>`:""}
 
       {tab==="info"&&(
         <InfoShareView db={db} setDb={setDb} isAdmin={true} userName="管理者"/>
+      )}
+
+      {tab==="manual"&&(
+        <iframe src={import.meta.env.BASE_URL + 'shutter-manual.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="業務マニュアル"/>
       )}
 
       {/* ─── 祝日編集タブ ─── */}

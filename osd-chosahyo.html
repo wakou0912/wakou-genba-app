@@ -1226,18 +1226,25 @@ function addSelectOption(si, ii, sti, fi) {
 // ═══════════════════════════════════════
 // 初期化
 // ═══════════════════════════════════════
+const hadLocalStorage = !!(localStorage.getItem('osd_form_v3') || localStorage.getItem('osd_form_v2'));
 load();
 render();
 
 // 親アプリ（Firestoreブリッジ）との同期
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'osd_init' && e.data.d) {
-    try {
-      const parsed = JSON.parse(e.data.d);
-      data = parsed;
-      migrate(data);
-      render();
-    } catch {}
+    if (hadLocalStorage) {
+      // ローカルストレージのデータをFirestoreへ上書き同期して終わり
+      try { window.parent.postMessage({type:'osd_save', d: JSON.stringify(data)}, '*'); } catch {}
+    } else {
+      // ローカルストレージにデータなし → Firestoreから読み込む
+      try {
+        const parsed = JSON.parse(e.data.d);
+        data = parsed;
+        migrate(data);
+        render();
+      } catch {}
+    }
   }
 });
 try { window.parent.postMessage({type: 'osd_ready'}, '*'); } catch {}

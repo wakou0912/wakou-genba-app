@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSD一式交換調査票｜株式会社ワコウ</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#080e14;color:#cfd8dc;font-family:'Noto Sans JP',sans-serif;min-height:100vh}
+button{cursor:pointer;font-family:inherit}
+
+.topbar{position:sticky;top:0;z-index:20;background:#080e14;border-bottom:1px solid #1a2634;padding:10px 14px;display:flex;gap:8px;align-items:center}
+.back-btn{padding:6px 12px;border-radius:7px;border:1px solid #1a2634;background:transparent;color:#78909c;font-size:12px}
+.topbar-title{flex:1;color:#ffd54f;font-size:13px;font-weight:700}
+.pdf-btn{padding:6px 14px;border-radius:7px;border:none;background:#ffd54f;color:#080e14;font-size:12px;font-weight:800}
+.edit-btn{padding:6px 12px;border-radius:7px;border:1px solid #1a2634;background:transparent;color:#546e7a;font-size:11px;font-weight:700}
+.edit-btn.active{border-color:#ff8a65;background:#2a1000;color:#ff8a65}
+
+.sheet{max-width:640px;margin:0 auto;padding:20px 16px 80px}
+.sheet-title{text-align:center;border-bottom:2px solid #4fc3f7;padding-bottom:12px;margin-bottom:20px}
+.sheet-title h1{font-size:18px;font-weight:900;letter-spacing:2px;color:#fff}
+.sheet-title p{font-size:10px;color:#546e7a;margin-top:4px}
+
+.sec-block{margin-bottom:4px}
+.sec-title{background:#1a2634;color:#4fc3f7;padding:5px 12px;border-radius:4px;font-size:12px;font-weight:800;margin-bottom:10px;margin-top:18px;display:flex;align-items:center;gap:6px}
+.sec-title-text{flex:1}
+
+/* 編集モード共通 */
+.edit-del-btn{padding:2px 8px;border-radius:4px;border:none;background:#2a1010;color:#ef5350;font-size:11px;cursor:pointer;flex-shrink:0}
+.edit-add-btn{width:100%;padding:8px;border-radius:6px;border:1px dashed #37474f;background:transparent;color:#546e7a;font-size:11px;cursor:pointer;margin-top:4px}
+.edit-add-btn:hover{border-color:#ff8a65;color:#ff8a65}
+.edit-label-input{flex:1;border:none;border-bottom:1px solid #37474f;outline:none;font-size:12px;font-weight:700;font-family:inherit;color:#cfd8dc;background:transparent;min-width:60px}
+.edit-sec-input{flex:1;border:none;border-bottom:1px solid #4fc3f7;outline:none;font-size:12px;font-weight:800;font-family:inherit;color:#4fc3f7;background:transparent}
+.add-sec-btn{width:100%;padding:10px;border-radius:6px;border:1px dashed #4fc3f7;background:transparent;color:#4fc3f7;font-size:12px;font-weight:700;cursor:pointer;margin-top:12px}
+.add-sec-btn:hover{background:#0d2030}
+
+.field-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:12px;flex-wrap:wrap}
+.field-label{min-width:90px;font-weight:700;color:#78909c;flex-shrink:0}
+.field-input{flex:1;border:none;border-bottom:1px solid #1a2634;outline:none;font-size:12px;padding:3px 4px;font-family:inherit;background:transparent;color:#cfd8dc;word-break:break-all;white-space:pre-wrap}
+.field-input:focus{border-bottom-color:#4fc3f7}
+.field-input[data-expand]{resize:none;overflow:hidden;min-height:24px;line-height:1.4;border-bottom:1px solid #1a2634;white-space:pre-wrap;word-break:break-all}
+.field-note{color:#263238;font-size:10px;margin-top:2px;padding-left:98px}
+
+.area-wrap{margin-bottom:12px}
+.area-input{width:100%;border-radius:4px;border:1px solid #1a2634;outline:none;font-size:12px;padding:8px;font-family:inherit;background:#0a1018;color:#cfd8dc;resize:vertical;min-height:70px}
+.area-input:focus{border-color:#4fc3f7}
+
+.note-box{margin-bottom:12px;padding:8px 12px;background:#1a1400;border-left:3px solid #ffd54f;border-radius:0 6px 6px 0;font-size:11px;color:#78909c}
+
+.check-item{margin-bottom:10px;border-radius:8px;overflow:hidden;border:1px solid #1a2634}
+.check-item.active{border-color:#1a3a1a}
+.check-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0a1018;cursor:pointer;user-select:none}
+.check-item.active .check-header{background:#0a1f0a}
+.check-box{width:22px;height:22px;border-radius:5px;border:2px solid #37474f;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#080e14;font-weight:900;transition:all 0.15s}
+.check-item.active .check-box{border-color:#a5d6a7;background:#a5d6a7}
+.check-name{font-weight:700;font-size:13px;color:#546e7a;flex:1;transition:color 0.15s}
+.check-item.active .check-name{color:#a5d6a7}
+.check-body{padding:12px 14px;background:#0a1018;border-top:1px solid #1a2634;display:none}
+.check-item.active .check-body{display:block}
+
+.subtype-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.subtype-bar-label{font-size:11px;color:#37474f}
+.subtype-btn{padding:6px 16px;border-radius:7px;border:1px solid #1a2634;background:transparent;color:#546e7a;font-size:12px;font-weight:700;transition:all 0.15s}
+.subtype-btn.sel{border-color:#4fc3f7;background:#0d2030;color:#4fc3f7}
+.subtype-fields{display:none}
+.subtype-fields.show{display:block}
+
+.sunpou-grid{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.sunpou-item{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid #1a2634}
+.sunpou-label{font-size:12px;font-weight:700;color:#78909c;min-width:130px;flex-shrink:0}
+.sunpou-input{flex:1;border:none;border-bottom:1px solid #1a2634;outline:none;font-size:12px;font-weight:700;padding:2px 4px;font-family:inherit;background:transparent;color:#cfd8dc;text-align:right;max-width:100px}
+.sunpou-unit{font-size:11px;color:#546e7a;flex-shrink:0}
+
+.sel-group{display:flex;gap:6px;flex-wrap:wrap}
+.sel-opt{padding:5px 14px;border-radius:6px;border:1px solid #1a2634;background:transparent;color:#546e7a;font-size:12px;font-weight:700;transition:all 0.15s}
+.sel-opt.sel{border-color:#4fc3f7;background:#0d2030;color:#4fc3f7}
+
+.recommend-box{background:#0d1520;border-radius:8px;padding:14px;border:1px solid #1a263440;margin-bottom:12px}
+.recommend-label{font-size:11px;color:#ffd54f;font-weight:700;margin-bottom:8px}
+
+/* 追加セクションボタン（編集時のみ） */
+.add-check-btn{width:100%;padding:8px;border-radius:6px;border:1px dashed #a5d6a7;background:transparent;color:#a5d6a7;font-size:11px;cursor:pointer;margin-top:4px;display:none}
+.editmode .add-check-btn{display:block}
+.sort-btn{padding:2px 6px;border-radius:4px;border:1px solid #1a2634;background:transparent;color:#546e7a;font-size:11px;cursor:pointer;flex-shrink:0}
+.sort-btn:hover{border-color:#4fc3f7;color:#4fc3f7}
+.sort-btn:disabled{opacity:0.2;cursor:default}
+
+@page{size:A4 portrait;margin:12mm 15mm}
+@media print {
+  .topbar{display:none!important}
+  body{background:white!important;color:#111!important}
+  .sheet{padding:0}
+  .sec-title{background:#222!important;color:#fff!important}
+  .check-item:not(.active){display:none!important}
+  .check-header{display:none!important}
+  .check-body{display:block!important}
+  .subtype-fields{display:none!important}
+  .subtype-fields.show{display:block!important}
+  .check-item.active{border-color:#ccc!important;margin-bottom:14px!important}
+  .check-item.active .check-body{border-top:none!important}
+  .check-item.active::before{content:attr(data-name);display:block;font-size:12px;font-weight:800;padding:5px 12px;background:#222;color:#fff}
+  .field-input,.sunpou-input,.area-input{color:#111!important;background:white!important;border-color:#aaa!important}
+  textarea.field-input{overflow:visible!important;height:auto!important;white-space:pre-wrap!important;word-break:break-all!important}
+  .field-row{page-break-inside:avoid!important;break-inside:avoid!important}
+  .check-item.active{page-break-inside:avoid!important;break-inside:avoid!important}
+  .sunpou-item{page-break-inside:avoid!important;break-inside:avoid!important}
+  .area-wrap{page-break-inside:avoid!important;break-inside:avoid!important}
+  .sec-block{page-break-inside:avoid!important;break-inside:avoid!important}
+  .field-label,.sunpou-label,.recommend-label{color:#333!important}
+  .field-note,.note-box{display:none!important}
+  .subtype-btn,.sel-opt{border-color:#ccc!important;color:#555!important}
+  .subtype-btn.sel,.sel-opt.sel{background:#e8f4f8!important;border-color:#666!important;color:#111!important}
+  .edit-del-btn,.edit-add-btn,.add-sec-btn,.add-check-btn{display:none!important}
+  .no-print{display:none!important}
+  .note-print-hide{display:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="back-btn">← 戻る</button>
+  <div class="topbar-title">📋 OSD一式交換調査票</div>
+  <button class="edit-btn" id="editBtn" onclick="toggleEdit()">✏️ 編集</button>
+  <button class="pdf-btn" onclick="window.print()">🖨️ PDF</button>
+</div>
+
+<div class="sheet" id="sheet"></div>
+
+<script>
+// ═══════════════════════════════════════
+// データモデル
+// ═══════════════════════════════════════
+const DEFAULT_DATA = {
+  title: 'OSD一式交換調査票',
+  sections: [
+    {
+      id: 's1', title: '基本情報', type: 'fields',
+      fields: [
+        { id: 'f1', label: '現場名', type: 'text', value: '' },
+        { id: 'f2', label: '調査日', type: 'date', value: '' },
+        { id: 'f3', label: '担当者', type: 'text', value: '' },
+        { id: 'f4', label: 'メーカー', type: 'text', value: '' },
+        { id: 'f5', label: '製造年', type: 'text', value: '' },
+        { id: 'f6', label: '動作', type: 'select', options: ['電動', '手動'], value: '',
+          children: [
+            { matchValue: '電動', field: { id: 'f6c1', label: '電源', type: 'select', options: ['100V', '200V', '400V'], value: '' } },
+            { matchValue: '電動', field: { id: 'f6c2', label: '開閉機名', type: 'text', value: '' } }
+          ]
+        },
+      ]
+    },
+    {
+      id: 's2', title: '開口寸法', type: 'sunpou',
+      fields: [
+        { id: 'sw1', label: '開口幅・下', value: '' },
+        { id: 'sw2', label: '開口幅・中', value: '' },
+        { id: 'sw3', label: '開口幅・上', value: '' },
+        { id: 'sh1', label: '開口高さ・内観右', value: '' },
+        { id: 'sh2', label: '開口高さ・内観左', value: '' },
+      ]
+    },
+    {
+      id: 's3', title: '足場の選定・搬入ルート', type: 'note_area',
+      note: '脚立、高車の本数、台数・搬入時道幅、クレーン・セルフローダー必要・搬入ルートの確認',
+      value: ''
+    },
+    {
+      id: 's4', title: '交換部品', type: 'checks',
+      items: [
+        {
+          id: 'ci1', name: 'スプリング', checked: true,
+          subtypes: [
+            {
+              id: 'st1', name: '三和製', selected: true,
+              fields: [
+                { id: 'f1', label: '太さ', value: '', note: '２０本分を測り÷２０をする。三和製は0.5mm刻み' },
+                { id: 'f2', label: '長さ', value: '', note: 'ブラケットからアンカープラグまで測る' },
+                { id: 'f3', label: '直径', value: '', note: 'スケールをスプリングに巻いてウェスト測る要領で測る' },
+                { id: 'f4', label: '管理シール', value: '', type: 'select', options: ['写真あり', '写真なし'], note: '有ればその写真を撮る' },
+                { id: 'f5', label: '現場名と場所', value: '', note: '管理番号がなければ記入（〜から何枚目など絵・写真で伝わるように報告）' },
+              ]
+            },
+            {
+              id: 'st2', name: '文化製', selected: false,
+              fields: [
+                { id: 'f1', label: '太さ', value: '' },
+                { id: 'f2', label: '長さ', value: '' },
+                { id: 'f3', label: '直径', value: '' },
+                { id: 'f4', label: '管理番号', value: '' },
+                { id: 'f5', label: '現場名と場所', value: '' },
+              ]
+            },
+            {
+              id: 'st3', name: '金剛製', selected: false,
+              fields: [
+                { id: 'f1', label: '管理番号', value: '', note: '写真を撮る（大体パネルの右側に貼ってある）' },
+                { id: 'f2', label: '現場名と場所', value: '', note: '管理番号がなければ記入' },
+              ]
+            },
+          ]
+        },
+        {
+          id: 'ci2', name: 'スラット', checked: false,
+          fields: [{ id: 'f1', label: '内容', type: 'area', value: '' }]
+        },
+        {
+          id: 'ci3', name: 'ワイヤー', checked: false,
+          fields: [
+            { id: 'f1', label: '太さ', value: '', note: 'ノギスで太さを測る' },
+            { id: 'f2', label: '長さ', value: '', note: 'FLからスプリングセンターを測る＝開口H＋SC' },
+            { id: 'f3', label: 'メーカー', value: '', type: 'select', options: ['三和', '金剛', '文化', '不明'], note: 'メーカーと分かれば製品名' },
+          ]
+        },
+        {
+          id: 'ci4', name: '座板', checked: false,
+          fields: [{ id: 'f1', label: '内容', type: 'area', value: '' }]
+        },
+        {
+          id: 'ci5', name: 'ガイドレール', checked: false,
+          fields: [{ id: 'f1', label: '内容', type: 'area', value: '' }]
+        },
+        {
+          id: 'ci6', name: '制御盤・OSD', checked: false,
+          fields: [{ id: 'f1', label: '内容', type: 'area', value: '' }]
+        },
+        {
+          id: 'ci7', name: 'リモコン・SW', checked: false,
+          fields: [{ id: 'f1', label: '内容', type: 'area', value: '' }]
+        },
+        {
+          id: 'ci8', name: '附帯工事', checked: false,
+          multiSelect: true,
+          subtypes: [
+            {
+              id: 'st1', name: '削り', selected: false,
+              fields: [
+                { id: 'f1', label: '箇所', value: '' },
+                { id: 'f2', label: '内容', value: '' },
+              ]
+            },
+            {
+              id: 'st2', name: '点検口', selected: false,
+              fields: [
+                { id: 'f1', label: '箇所', value: '' },
+                { id: 'f2', label: 'サイズ', value: '' },
+              ]
+            },
+          ]
+        },
+      ]
+    },
+    {
+      id: 's5', title: '推奨品', type: 'fields',
+      fields: [
+        { id: 'r1', label: '推奨機種', type: 'text', value: '' },
+        { id: 'r2', label: 'オプション', type: 'text', value: '' },
+      ]
+    },
+    {
+      id: 's6', title: '備考・特記事項', type: 'note_area',
+      note: '', value: ''
+    },
+  ]
+};
+
+// ═══════════════════════════════════════
+// 状態管理
+// ═══════════════════════════════════════
+let editMode = false;
+let data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+
+const CURRENT_VERSION = 3;
+
+function save() {
+  localStorage.setItem('osd_form_v3', JSON.stringify(data));
+  localStorage.setItem('osd_form_version', CURRENT_VERSION);
+}
+
+function load() {
+  try {
+    // v3のデータを優先
+    let saved = localStorage.getItem('osd_form_v3');
+    // なければv2を試みてマイグレーション
+    if (!saved) saved = localStorage.getItem('osd_form_v2');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      data = parsed;
+      // マイグレーション：新機能で追加されたフィールドを既存データに追記
+      migrate(data);
+    }
+  } catch(e) {}
+  // 調査日が空なら今日
+  const sec = data.sections.find(s => s.id === 's1');
+  if (sec) {
+    const df = sec.fields.find(f => f.type === 'date');
+    if (df && !df.value) df.value = new Date().toISOString().split('T')[0];
+  }
+}
+
+function migrate(d) {
+  // 基本情報に「動作」フィールドがなければ追加、あれば子フィールドを同期
+  const s1 = d.sections && d.sections.find(s => s.id === 's1');
+  if (s1 && s1.fields) {
+    let f6 = s1.fields.find(f => f.id === 'f6');
+    if (!f6) {
+      s1.fields.push({
+        id: 'f6', label: '動作', type: 'select', options: ['電動', '手動'], value: '',
+        children: [
+          { matchValue: '電動', field: { id: 'f6c1', label: '電源', type: 'select', options: ['100V', '200V', '400V'], value: '' } },
+          { matchValue: '電動', field: { id: 'f6c2', label: '開閉機名', type: 'text', value: '' } }
+        ]
+      });
+    } else {
+      if (!f6.children) f6.children = [];
+      if (!f6.children.find(c => c.field && c.field.id === 'f6c1'))
+        f6.children.push({ matchValue: '電動', field: { id: 'f6c1', label: '電源', type: 'select', options: ['100V', '200V', '400V'], value: '' } });
+      if (!f6.children.find(c => c.field && c.field.id === 'f6c2'))
+        f6.children.push({ matchValue: '電動', field: { id: 'f6c2', label: '開閉機名', type: 'text', value: '' } });
+    }
+  }
+  // checkItemsにshowNoteがなければ追加
+  d.sections && d.sections.forEach(sec => {
+    if (sec.type === 'checks' && sec.items) {
+      sec.items.forEach(item => {
+        if (item.showNote === undefined) item.showNote = true;
+      });
+    }
+  });
+  // 保存し直す
+  save();
+}
+
+// ═══════════════════════════════════════
+// ユーティリティ
+// ═══════════════════════════════════════
+let _uid = Date.now();
+function uid() { return 'x' + (++_uid); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ═══════════════════════════════════════
+// レンダリング
+// ═══════════════════════════════════════
+function render() {
+  const sheet = document.getElementById('sheet');
+  let h = '';
+  if(editMode){
+    h += `<div class="sheet-title"><input value="${esc(data.title||'OSD一式交換調査票')}" onchange="data.title=this.value;save()" style="width:100%;border:none;border-bottom:2px solid #4fc3f7;outline:none;font-size:18px;font-weight:900;letter-spacing:2px;color:#fff;background:transparent;text-align:center;font-family:inherit;padding:4px 0"><p style="font-size:10px;color:#546e7a;margin-top:8px">株式会社ワコウ</p></div>`;
+  } else {
+    h += `<div class="sheet-title"><h1>${esc(data.title||'OSD一式交換調査票')}</h1><p>株式会社ワコウ</p></div>`;
+  }
+
+  data.sections.forEach((sec, si) => {
+    h += renderSection(sec, si);
+  });
+
+  if (editMode) {
+    h += `<button class="add-sec-btn" onclick="addSection()">＋ セクションを追加</button>`;
+  }
+
+  sheet.innerHTML = h;
+  if (editMode) sheet.classList.add('editmode');
+  else sheet.classList.remove('editmode');
+}
+
+function renderSection(sec, si) {
+  let h = `<div class="sec-block" data-si="${si}">`;
+
+  // セクションタイトル
+  h += `<div class="sec-title">`;
+  if (editMode) {
+    h += `<button class="sort-btn" onclick="moveSection(${si},-1)" ${si===0?'disabled':''}>▲</button>`;
+    h += `<button class="sort-btn" onclick="moveSection(${si},1)" ${si===data.sections.length-1?'disabled':''}>▼</button>`;
+    h += `<input class="edit-sec-input" value="${esc(sec.title)}" onchange="updateSecTitle(${si},this.value)">`;
+    h += `<button class="edit-del-btn" onclick="deleteSection(${si})">🗑️</button>`;
+  } else {
+    h += `<span class="sec-title-text">■ ${esc(sec.title)}</span>`;
+  }
+  h += `</div>`;
+
+  // セクション内容
+  if (sec.type === 'fields') {
+    h += renderFields(sec, si);
+    if (editMode) {
+      h += `<div style="display:flex;gap:6px;margin-top:4px">`;
+      h += `<button class="edit-add-btn" style="margin-top:0" onclick="addField(${si},'text')">＋ テキスト</button>`;
+      h += `<button class="edit-add-btn" style="margin-top:0;border-color:#ffd54f;color:#ffd54f" onclick="addField(${si},'select')">＋ 選択式</button>`;
+      h += `</div>`;
+    }
+  } else if (sec.type === 'sunpou') {
+    h += renderSunpou(sec, si);
+    if (editMode) {
+      h += `<button class="edit-add-btn" onclick="addSunpouField(${si})">＋ 寸法項目を追加</button>`;
+    }
+  } else if (sec.type === 'note_area') {
+    h += renderNoteArea(sec, si);
+  } else if (sec.type === 'checks') {
+    h += renderChecks(sec, si);
+    h += `<button class="add-check-btn" onclick="addCheckItem(${si})">＋ 交換部品を追加</button>`;
+  }
+
+  h += `</div>`;
+  return h;
+}
+
+function renderFields(sec, si) {
+  let h = '';
+  (sec.fields||[]).forEach((f, fi) => {
+    h += `<div class="field-row">`;
+    if (editMode) {
+      h += `<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveField(${si},${fi},-1)" ${fi===0?'disabled':''}>▲</button>`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveField(${si},${fi},1)" ${fi===(sec.fields.length-1)?'disabled':''}>▼</button>`;
+      h += `</div>`;
+      h += `<input class="edit-label-input" value="${esc(f.label)}" onchange="updateFieldLabel(${si},${fi},this.value)" style="min-width:80px;width:90px">`;
+    } else {
+      h += `<div class="field-label">${esc(f.label)}</div>`;
+    }
+    if (f.type === 'date') {
+      h += `<input class="field-input" type="date" value="${esc(f.value)}" onchange="updateFieldValue(${si},${fi},this.value)">`;
+    } else if (f.type === 'select') {
+      if (editMode) {
+        h += `<div style="flex:1">`;
+        h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">`;
+        (f.options||[]).forEach((opt, oi) => {
+          h += `<div style="display:flex;align-items:center;gap:2px;background:#0d2030;border:1px solid #1a2634;border-radius:6px;padding:2px 6px">`;
+          h += `<input value="${esc(opt)}" onchange="updateSectionSelectOption(${si},${fi},${oi},this.value)" style="border:none;outline:none;font-size:11px;color:#4fc3f7;background:transparent;width:60px;font-family:inherit">`;
+          h += `<button onclick="deleteSectionSelectOption(${si},${fi},${oi})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer;padding:0 2px">✕</button>`;
+          h += `</div>`;
+        });
+        h += `<button onclick="addSectionSelectOption(${si},${fi})" style="padding:2px 8px;border-radius:6px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋選択肢</button>`;
+        h += `</div>`;
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+        h += `<input type="checkbox" ${f.multi?'checked':''} onchange="toggleSectionMulti(${si},${fi},this.checked)">複数選択</label>`;
+        h += `</div>`;
+      } else {
+        const selVals = Array.isArray(f.value) ? f.value : (f.value ? [f.value] : []);
+        h += `<div class="sel-group">`;
+        (f.options||[]).forEach(opt => {
+          h += `<button class="sel-opt${selVals.includes(opt)?' sel':''}" onclick="selectSectionOpt(${si},${fi},'${esc(opt)}')">${esc(opt)}</button>`;
+        });
+        h += `</div>`;
+      }
+    } else {
+      h += `<textarea class="field-input" rows="1" oninput="autoResize(this)" onchange="updateFieldValue(${si},${fi},this.value)" style="resize:none;overflow:hidden;line-height:1.5;padding-top:4px;padding-bottom:4px">${esc(f.value)}</textarea>`;
+    }
+    if (editMode) {
+      h += `<button class="edit-del-btn" onclick="deleteField(${si},${fi})">✕</button>`;
+    }
+    h += `</div>`;
+    // メモ（編集時は入力欄、通常時はグレー小文字で表示）
+    if (editMode) {
+      h += `<input value="${esc(f.note||'')}" onchange="updateFieldNote(${si},${fi},this.value)" placeholder="※ メモ（PDF非表示）" style="width:100%;background:transparent;border:none;border-bottom:1px dashed #263238;outline:none;font-size:10px;color:#37474f;padding:2px 4px 4px 98px;font-family:inherit;margin-bottom:4px">`;
+      // 選択式の連動フィールド設定
+      if (f.type === 'select') {
+        h += `<div style="margin-left:8px;border-left:2px solid #263238;padding-left:8px;margin-bottom:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a;margin-bottom:4px">連動フィールド</div>`;
+        (f.options||[]).forEach((opt, oi) => {
+          const children = (f.children||[]).filter(c=>c.matchValue===opt);
+          h += `<div style="margin-bottom:6px">`;
+          h += `<div style="font-size:10px;color:#4fc3f7;margin-bottom:3px">▸「${esc(opt)}」選択時</div>`;
+          children.forEach((child, ci) => {
+            const cf2 = child.field;
+            h += `<div style="padding-left:8px;margin-bottom:6px;border-left:1px dashed #263238">`;
+            h += `<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">`;
+            h += `<input value="${esc(cf2.label)}" onchange="updateSectionChildLabel(${si},${fi},'${esc(opt)}',${ci},this.value)" style="border:none;border-bottom:1px solid #37474f;outline:none;font-size:11px;color:#cfd8dc;background:transparent;font-family:inherit;flex:1">`;
+            h += `<span style="font-size:10px;color:#37474f">${cf2.type==='select'?'選択式':'テキスト'}</span>`;
+            if (cf2.type === 'select') {
+              h += `<label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+              h += `<input type="checkbox" ${cf2.multi?'checked':''} onchange="toggleSectionChildMulti(${si},${fi},'${esc(opt)}',${ci},this.checked)">複数</label>`;
+            }
+            h += `<button onclick="deleteSectionChild(${si},${fi},'${esc(opt)}',${ci})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer">✕</button>`;
+            h += `</div>`;
+            if (cf2.type === 'select') {
+              h += `<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+              (cf2.options||[]).forEach((opt2, oi2) => {
+                h += `<div style="display:flex;align-items:center;gap:2px;background:#0d2030;border:1px solid #1a2634;border-radius:6px;padding:2px 6px">`;
+                h += `<input value="${esc(opt2)}" onchange="updateSectionChildOption(${si},${fi},'${esc(opt)}',${ci},${oi2},this.value)" style="border:none;outline:none;font-size:11px;color:#4fc3f7;background:transparent;width:55px;font-family:inherit">`;
+                h += `<button onclick="deleteSectionChildOption(${si},${fi},'${esc(opt)}',${ci},${oi2})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer;padding:0 2px">✕</button>`;
+                h += `</div>`;
+              });
+              h += `<button onclick="addSectionChildOption(${si},${fi},'${esc(opt)}',${ci})" style="padding:2px 8px;border-radius:6px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋</button>`;
+              h += `</div>`;
+            }
+            h += `</div>`;
+          });
+          h += `<div style="display:flex;gap:4px;padding-left:8px">`;
+          h += `<button onclick="addSectionChild(${si},${fi},'${esc(opt)}','text')" style="padding:2px 8px;border-radius:4px;border:1px dashed #37474f;background:transparent;color:#546e7a;font-size:10px;cursor:pointer">＋テキスト</button>`;
+          h += `<button onclick="addSectionChild(${si},${fi},'${esc(opt)}','select')" style="padding:2px 8px;border-radius:4px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋選択式</button>`;
+          h += `</div></div>`;
+        });
+        h += `</div>`;
+      }
+    } else if (f.note) {
+      h += `<div class="no-print" style="font-size:10px;color:#37474f;padding-left:98px;margin-bottom:6px">※ ${esc(f.note)}</div>`;
+    }
+    // 条件分岐子フィールド
+    if (!editMode && f.type === 'select' && f.children && f.children.length > 0) {
+      const parentVals = Array.isArray(f.value) ? f.value : (f.value ? [f.value] : []);
+      f.children.forEach((child, ci) => {
+        if (!parentVals.includes(child.matchValue)) return;
+        const cf = child.field;
+        h += `<div class="field-row" style="padding-left:16px;border-left:2px solid #4fc3f7;margin-left:8px;margin-top:4px">`;
+        h += `<div class="field-label" style="color:#4fc3f7">${esc(cf.label)}</div>`;
+        if (cf.type === 'select') {
+          const selVals2 = Array.isArray(cf.value) ? cf.value : (cf.value ? [cf.value] : []);
+          h += `<div class="sel-group">`;
+          (cf.options||[]).forEach(opt => {
+            const fn = cf.multi ? 'toggleSectionChildOpt' : 'selectChildOpt';
+            h += `<button class="sel-opt${selVals2.includes(opt)?' sel':''}" onclick="${fn}(${si},${fi},${ci},'${esc(opt)}')">${esc(opt)}</button>`;
+          });
+          h += `</div>`;
+        } else {
+          h += `<textarea class="field-input" rows="1" oninput="autoResize(this)" onchange="updateChildValue(${si},${fi},${ci},this.value)" style="resize:none;overflow:hidden;line-height:1.5;padding-top:4px;padding-bottom:4px">${esc(cf.value||"")}</textarea>`;
+        }
+        h += `</div>`;
+      });
+    }
+  });
+  return h;
+}
+
+function renderSunpou(sec, si) {
+  let h = `<div class="sunpou-grid">`;
+  (sec.fields||[]).forEach((f, fi) => {
+    h += `<div class="sunpou-item">`;
+    if (editMode) {
+      h += `<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;margin-right:4px">`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveSunpouField(${si},${fi},-1)" ${fi===0?'disabled':''}>▲</button>`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveSunpouField(${si},${fi},1)" ${fi===(sec.fields.length-1)?'disabled':''}>▼</button>`;
+      h += `</div>`;
+      h += `<input value="${esc(f.label)}" onchange="updateSunpouLabel(${si},${fi},this.value)" style="flex:1;border:none;border-bottom:1px solid #37474f;outline:none;font-size:12px;font-weight:700;color:#78909c;background:transparent;font-family:inherit;min-width:80px">`;
+      h += `<button class="edit-del-btn" onclick="deleteSunpouField(${si},${fi})" style="padding:1px 6px;font-size:10px">✕</button>`;
+    } else {
+      h += `<div class="sunpou-label">${esc(f.label)}</div>`;
+    }
+    h += `<input class="sunpou-input" type="text" value="${esc(f.value)}" onchange="updateSunpouValue(${si},${fi},this.value)" placeholder="0">`;
+    h += `<div class="sunpou-unit">mm</div>`;
+    h += `</div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
+function renderNoteArea(sec, si) {
+  let h = '';
+  if (editMode) {
+    h += `<div style="margin-bottom:8px">`;
+    h += `<input value="${esc(sec.note||'')}" onchange="updateNoteText(${si},this.value)" placeholder="ヒントテキスト（任意）" style="width:100%;border:none;border-bottom:1px dashed #ffd54f;outline:none;font-size:11px;color:#78909c;background:transparent;font-family:inherit;padding:4px">`;
+    h += `</div>`;
+  } else if (sec.note) {
+    h += `<div class="note-box">${esc(sec.note)}</div>`;
+  }
+  const secNoteEmpty = !sec.value || sec.value.trim() === '';
+  h += `<div class="${secNoteEmpty?'note-print-hide':''}"><textarea class="area-input" rows="3" placeholder="調査内容を入力..." onchange="updateNoteValue(${si},this.value)" style="margin-bottom:0">${esc(sec.value||'')}</textarea></div>`;
+  // PDF非表示メモ欄
+  if (editMode) {
+    h += `<input value="${esc(sec.caution||'')}" onchange="updateNoteCaution(${si},this.value)" placeholder="⚠️ 内部メモ（PDF非表示）" class="no-print" style="width:100%;background:#1a1400;border:none;border-left:3px solid #ffd54f;outline:none;font-size:11px;color:#78909c;padding:6px 10px;font-family:inherit;margin-top:6px;border-radius:0 4px 4px 0">`;
+  } else if (sec.caution) {
+    h += `<div class="no-print" style="padding:6px 10px;background:#1a1400;border-left:3px solid #ffd54f;border-radius:0 4px 4px 0;font-size:11px;color:#78909c;margin-top:6px">⚠️ ${esc(sec.caution)}</div>`;
+  }
+  return h;
+}
+
+function renderChecks(sec, si) {
+  let h = '';
+  (sec.items||[]).forEach((item, ii) => {
+    const active = item.checked;
+    h += `<div class="check-item${active?' active':''}" data-name="${esc(item.name)}">`;
+    h += `<div class="check-header" onclick="toggleCheck(${si},${ii})">`;
+    h += `<div class="check-box">${active?'✓':''}</div>`;
+    if (editMode) {
+      h += `<button class="sort-btn" onclick="event.stopPropagation();moveCheckItem(${si},${ii},-1)" ${ii===0?'disabled':''}>▲</button>`;
+      h += `<button class="sort-btn" onclick="event.stopPropagation();moveCheckItem(${si},${ii},1)" ${ii===sec.items.length-1?'disabled':''}>▼</button>`;
+      h += `<input class="edit-label-input" value="${esc(item.name)}" onclick="event.stopPropagation()" onchange="updateCheckName(${si},${ii},this.value)">`;
+      h += `<button class="edit-del-btn" onclick="event.stopPropagation();deleteCheckItem(${si},${ii})">🗑️</button>`;
+    } else {
+      h += `<div class="check-name">${esc(item.name)}</div>`;
+    }
+    h += `</div>`; // check-header
+
+    h += `<div class="check-body">`;
+
+    // アイテムレベルの注意事項（編集モードで入力、通常モードで表示、PDF非表示）
+    if (editMode) {
+      h += `<input value="${esc(item.caution||'')}" onchange="updateCheckCaution(${si},${ii},this.value)" placeholder="⚠️ 注意事項（PDF非表示）" class="no-print" style="width:100%;background:#1a1400;border:none;border-left:3px solid #ffd54f;outline:none;font-size:11px;color:#78909c;padding:6px 10px;font-family:inherit;margin-bottom:10px;border-radius:0 4px 4px 0">`;
+    } else if (item.caution) {
+      h += `<div class="no-print" style="padding:6px 10px;background:#1a1400;border-left:3px solid #ffd54f;border-radius:0 4px 4px 0;font-size:11px;color:#78909c;margin-bottom:10px">⚠️ ${esc(item.caution)}</div>`;
+    }
+
+    // サブタイプあり
+    if (item.subtypes && item.subtypes.length > 0) {
+      const isMulti = !!item.multiSelect;
+      h += `<div class="subtype-bar"><span class="subtype-bar-label">種別：</span>`;
+      item.subtypes.forEach((st, sti) => {
+        if (editMode) {
+          h += `<div style="display:flex;align-items:center;gap:3px;background:#0d2030;border:1px solid #1a2634;border-radius:7px;padding:2px 6px">`;
+          h += `<input value="${esc(st.name)}" onchange="updateSubtypeName(${si},${ii},${sti},this.value)" onclick="event.stopPropagation()" style="border:none;outline:none;font-size:12px;font-weight:700;font-family:inherit;color:#4fc3f7;background:transparent;width:70px">`;
+          h += `<button class="edit-del-btn" onclick="event.stopPropagation();deleteSubtype(${si},${ii},${sti})" style="padding:1px 5px;font-size:10px">✕</button>`;
+          h += `</div>`;
+        } else {
+          h += `<button class="subtype-btn${st.selected?' sel':''}" onclick="${isMulti?'toggleSubtype':'selectSubtype'}(${si},${ii},${sti})">${esc(st.name)}</button>`;
+        }
+      });
+      if (editMode) {
+        // 複数選択モード切替トグル
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#546e7a;cursor:pointer;margin-left:6px">`;
+        h += `<input type="checkbox" ${isMulti?'checked':''} onchange="toggleMultiSelect(${si},${ii},this.checked)" style="cursor:pointer">`;
+        h += `複数選択</label>`;
+        h += `<button onclick="addSubtype(${si},${ii})" style="padding:4px 10px;border-radius:5px;border:1px dashed #37474f;background:transparent;color:#546e7a;font-size:10px;cursor:pointer">＋種別</button>`;
+      }
+      h += `</div>`;
+
+      item.subtypes.forEach((st, sti) => {
+        if (!st.selected) return;
+        const hasFields = st.fields && st.fields.length > 0;
+        if (!hasFields && !editMode) return; // フィールドなし＆通常モードは何も描画しない
+        const needDivider = isMulti && sti > 0 && item.subtypes.slice(0,sti).some(s=>s.selected) && hasFields;
+        h += `<div class="subtype-fields show" style="${needDivider?'border-top:1px dashed #1a2634;padding-top:10px;margin-top:6px':''}">`;
+        if (isMulti && hasFields) {
+          h += `<div style="font-size:10px;font-weight:700;color:#4fc3f7;margin-bottom:6px">▸ ${esc(st.name)}</div>`;
+        }
+        h += renderCheckFields(st.fields, si, ii, sti, true);
+        if (editMode) {
+          h += `<div style="display:flex;gap:6px;margin-top:4px">`;
+          h += `<button class="edit-add-btn" style="margin-top:0" onclick="addSubtypeField(${si},${ii},${sti},'text')">＋ テキスト</button>`;
+          h += `<button class="edit-add-btn" style="margin-top:0;border-color:#ffd54f;color:#ffd54f" onclick="addSubtypeField(${si},${ii},${sti},'select')">＋ 選択式</button>`;
+          h += `</div>`;
+        }
+        h += `</div>`;
+      });
+      // 備考（編集モードでON/OFF、ONなら常時入力可能）
+      if (editMode) {
+        const hasNote = item.showNote !== false;
+        h += `<div style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px;display:flex;align-items:center;gap:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a">備考欄</div>`;
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+        h += `<input type="checkbox" ${hasNote?'checked':''} onchange="toggleCheckNote(${si},${ii},this.checked)">表示する</label>`;
+        h += `</div>`;
+      } else if (item.showNote !== false) {
+        const noteEmpty = !item.note || item.note.trim() === '';
+        h += `<div class="${noteEmpty?'note-print-hide':''}" style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a;margin-bottom:4px">備考</div>`;
+        h += `<textarea class="area-input" rows="2" placeholder="自由記入..." onchange="updateCheckNote(${si},${ii},this.value)">${esc(item.note||'')}</textarea>`;
+        h += `</div>`;
+      }
+    } else if (item.fields && item.fields.length > 0) {
+      h += renderCheckFields(item.fields, si, ii, -1, false);
+      if (editMode) {
+        h += `<div style="display:flex;gap:6px;margin-top:4px">`;
+        h += `<button class="edit-add-btn" style="margin-top:0" onclick="addItemField(${si},${ii},'text')">＋ テキスト</button>`;
+        h += `<button class="edit-add-btn" style="margin-top:0;border-color:#ffd54f;color:#ffd54f" onclick="addItemField(${si},${ii},'select')">＋ 選択式</button>`;
+        h += `<button class="edit-add-btn" style="margin-top:0;border-color:#4fc3f7;color:#4fc3f7" onclick="addSubtype(${si},${ii})">＋ 種別</button>`;
+        h += `</div>`;
+      }
+      // 備考（編集モードでON/OFF、ONなら常時入力可能）
+      if (editMode) {
+        const hasNote = item.showNote !== false;
+        h += `<div style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px;display:flex;align-items:center;gap:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a">備考欄</div>`;
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+        h += `<input type="checkbox" ${hasNote?'checked':''} onchange="toggleCheckNote(${si},${ii},this.checked)">表示する</label>`;
+        h += `</div>`;
+      } else if (item.showNote !== false) {
+        const noteEmpty = !item.note || item.note.trim() === '';
+        h += `<div class="${noteEmpty?'note-print-hide':''}" style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a;margin-bottom:4px">備考</div>`;
+        h += `<textarea class="area-input" rows="2" placeholder="自由記入..." onchange="updateCheckNote(${si},${ii},this.value)">${esc(item.note||'')}</textarea>`;
+        h += `</div>`;
+      }
+    } else {
+      h += `<div class="area-wrap"><textarea class="area-input" rows="3" placeholder="調査内容を入力..." onchange="updateCheckContent(${si},${ii},this.value)">${esc(item.content||'')}</textarea></div>`;
+      if (editMode) {
+        h += `<div style="display:flex;gap:6px;margin-top:4px">`;
+        h += `<button class="edit-add-btn" style="margin-top:0" onclick="addItemField(${si},${ii},'text')">＋ テキスト</button>`;
+        h += `<button class="edit-add-btn" style="margin-top:0;border-color:#ffd54f;color:#ffd54f" onclick="addItemField(${si},${ii},'select')">＋ 選択式</button>`;
+        h += `<button class="edit-add-btn" style="margin-top:0;border-color:#4fc3f7;color:#4fc3f7" onclick="addSubtype(${si},${ii})">＋ 種別</button>`;
+        h += `</div>`;
+      }
+      // 備考（編集モードでON/OFF、ONなら常時入力可能）
+      if (editMode) {
+        const hasNote = item.showNote !== false;
+        h += `<div style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px;display:flex;align-items:center;gap:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a">備考欄</div>`;
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+        h += `<input type="checkbox" ${hasNote?'checked':''} onchange="toggleCheckNote(${si},${ii},this.checked)">表示する</label>`;
+        h += `</div>`;
+      } else if (item.showNote !== false) {
+        const noteEmpty = !item.note || item.note.trim() === '';
+        h += `<div class="${noteEmpty?'note-print-hide':''}" style="margin-top:8px;border-top:1px dashed #1a2634;padding-top:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a;margin-bottom:4px">備考</div>`;
+        h += `<textarea class="area-input" rows="2" placeholder="自由記入..." onchange="updateCheckNote(${si},${ii},this.value)">${esc(item.note||'')}</textarea>`;
+        h += `</div>`;
+      }
+    }
+
+    h += `</div>`; // check-body
+    h += `</div>`; // check-item
+  });
+  return h;
+}
+
+function renderCheckFields(fields, si, ii, sti, isSub) {
+  let h = '';
+  fields.forEach((f, fi) => {
+    if (f.type === 'area') {
+      h += `<div class="area-wrap"><textarea class="area-input" rows="3" placeholder="調査内容を入力..." onchange="updateCheckFieldValue(${si},${ii},${sti},${fi},this.value)">${esc(f.value||'')}</textarea></div>`;
+      return;
+    }
+    h += `<div class="field-row">`;
+    if (editMode) {
+      h += `<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0">`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveCheckField(${si},${ii},${sti},${fi},-1)" ${fi===0?'disabled':''}>▲</button>`;
+      h += `<button class="sort-btn" style="padding:1px 5px;font-size:9px" onclick="moveCheckField(${si},${ii},${sti},${fi},1)" ${fi===(fields.length-1)?'disabled':''}>▼</button>`;
+      h += `</div>`;
+      h += `<input class="edit-label-input" value="${esc(f.label)}" onchange="updateCheckFieldLabel(${si},${ii},${sti},${fi},this.value)" style="min-width:70px;width:80px">`;
+    } else {
+      h += `<div class="field-label">${esc(f.label)}</div>`;
+    }
+    if (f.type === 'select') {
+      if (editMode) {
+        h += `<div style="flex:1">`;
+        h += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">`;
+        (f.options||[]).forEach((opt, oi) => {
+          h += `<div style="display:flex;align-items:center;gap:2px;background:#0d2030;border:1px solid #1a2634;border-radius:6px;padding:2px 6px">`;
+          h += `<input value="${esc(opt)}" onchange="updateSelectOption(${si},${ii},${sti},${fi},${oi},this.value)" style="border:none;outline:none;font-size:11px;color:#4fc3f7;background:transparent;width:60px;font-family:inherit">`;
+          h += `<button onclick="deleteSelectOption(${si},${ii},${sti},${fi},${oi})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer;padding:0 2px">✕</button>`;
+          h += `</div>`;
+        });
+        h += `<button onclick="addSelectOption(${si},${ii},${sti},${fi})" style="padding:2px 8px;border-radius:6px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋選択肢</button>`;
+        h += `</div>`;
+        h += `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#ffd54f;cursor:pointer;margin-top:4px">`;
+        h += `<input type="checkbox" ${f.multi?'checked':''} onchange="toggleCheckFieldMulti(${si},${ii},${sti},${fi},this.checked)">複数選択</label>`;
+        h += `</div>`;
+      } else {
+        h += `<div class="sel-group">`;
+        (f.options||[]).forEach(opt => {
+          const selVals = Array.isArray(f.value) ? f.value : (f.value ? [f.value] : []);
+          h += `<button class="sel-opt${selVals.includes(opt)?' sel':''}" onclick="selectOpt(${si},${ii},${sti},${fi},'${esc(opt)}')">${esc(opt)}</button>`;
+        });
+        h += `</div>`;
+      }
+    } else {
+      h += `<textarea class="field-input" rows="1" oninput="autoResize(this)" onchange="updateCheckFieldValue(${si},${ii},${sti},${fi},this.value)" style="resize:none;overflow:hidden;line-height:1.5;padding-top:4px;padding-bottom:4px">${esc(f.value||"")}</textarea>`;
+    }
+    if (editMode) {
+      h += `<button class="edit-del-btn" onclick="deleteCheckField(${si},${ii},${sti},${fi})">✕</button>`;
+    }
+    h += `</div>`;
+    if (!editMode && f.note) {
+      h += `<div class="field-note">※ ${esc(f.note)}</div>`;
+    }
+    if (editMode) {
+      h += `<input value="${esc(f.note||'')}" onchange="updateCheckFieldNote(${si},${ii},${sti},${fi},this.value)" placeholder="※ メモ（画面のみ表示）" style="width:100%;background:transparent;border:none;border-bottom:1px dashed #263238;outline:none;font-size:10px;color:#37474f;padding:2px 4px;font-family:inherit;margin-bottom:6px">`;
+      // 編集モード：選択肢ごとの子フィールド追加ボタン
+      if (f.type === 'select') {
+        h += `<div style="margin-left:8px;border-left:2px solid #263238;padding-left:8px;margin-bottom:8px">`;
+        h += `<div style="font-size:10px;color:#546e7a;margin-bottom:4px">連動フィールド</div>`;
+        (f.options||[]).forEach((opt, oi) => {
+          const children = (f.children||[]).filter(c=>c.matchValue===opt);
+          h += `<div style="margin-bottom:6px">`;
+          h += `<div style="font-size:10px;color:#4fc3f7;margin-bottom:3px">▸「${esc(opt)}」選択時</div>`;
+          children.forEach((child, ci) => {
+            const cf2 = child.field;
+            h += `<div style="padding-left:8px;margin-bottom:6px;border-left:1px dashed #263238">`;
+            // ラベル行
+            h += `<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">`;
+            h += `<input value="${esc(cf2.label)}" onchange="updateCheckChildLabel(${si},${ii},${sti},${fi},'${esc(opt)}',${ci},this.value)" style="border:none;border-bottom:1px solid #37474f;outline:none;font-size:11px;color:#cfd8dc;background:transparent;font-family:inherit;flex:1">`;
+            h += `<span style="font-size:10px;color:#37474f">${cf2.type==='select'?'選択式':'テキスト'}</span>`;
+            if (cf2.type === 'select') {
+              h += `<label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#ffd54f;cursor:pointer">`;
+              h += `<input type="checkbox" ${cf2.multi?'checked':''} onchange="toggleCheckChildMulti(${si},${ii},${sti},${fi},'${esc(opt)}',${ci},this.checked)">複数</label>`;
+            }
+            h += `<button onclick="deleteCheckChild(${si},${ii},${sti},${fi},'${esc(opt)}',${ci})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer">✕</button>`;
+            h += `</div>`;
+            // 選択式の場合は選択肢を編集可能に
+            if (cf2.type === 'select') {
+              h += `<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+              (cf2.options||[]).forEach((opt2, oi2) => {
+                h += `<div style="display:flex;align-items:center;gap:2px;background:#0d2030;border:1px solid #1a2634;border-radius:6px;padding:2px 6px">`;
+                h += `<input value="${esc(opt2)}" onchange="updateCheckChildOption(${si},${ii},${sti},${fi},'${esc(opt)}',${ci},${oi2},this.value)" style="border:none;outline:none;font-size:11px;color:#4fc3f7;background:transparent;width:55px;font-family:inherit">`;
+                h += `<button onclick="deleteCheckChildOption(${si},${ii},${sti},${fi},'${esc(opt)}',${ci},${oi2})" style="border:none;background:transparent;color:#ef5350;font-size:10px;cursor:pointer;padding:0 2px">✕</button>`;
+                h += `</div>`;
+              });
+              h += `<button onclick="addCheckChildOption(${si},${ii},${sti},${fi},'${esc(opt)}',${ci})" style="padding:2px 8px;border-radius:6px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋</button>`;
+              h += `</div>`;
+            }
+            h += `</div>`;
+          });
+          h += `<div style="display:flex;gap:4px;padding-left:8px">`;
+          h += `<button onclick="addCheckChild(${si},${ii},${sti},${fi},'${esc(opt)}','text')" style="padding:2px 8px;border-radius:4px;border:1px dashed #37474f;background:transparent;color:#546e7a;font-size:10px;cursor:pointer">＋テキスト</button>`;
+          h += `<button onclick="addCheckChild(${si},${ii},${sti},${fi},'${esc(opt)}','select')" style="padding:2px 8px;border-radius:4px;border:1px dashed #ffd54f;background:transparent;color:#ffd54f;font-size:10px;cursor:pointer">＋選択式</button>`;
+          h += `</div>`;
+          h += `</div>`;
+        });
+        h += `</div>`;
+      }
+    }
+    // 通常モード：子フィールド表示
+    if (!editMode && f.type === 'select' && f.children && f.children.length > 0) {
+      const parentVals = Array.isArray(f.value) ? f.value : (f.value ? [f.value] : []);
+      f.children.forEach((child, ci) => {
+        if (!parentVals.includes(child.matchValue)) return;
+        const cf2 = child.field;
+        h += `<div class="field-row" style="padding-left:16px;border-left:2px solid #4fc3f7;margin-left:8px;margin-top:4px">`;
+        h += `<div class="field-label" style="color:#4fc3f7">${esc(cf2.label)}</div>`;
+        if (cf2.type === 'select') {
+          const selVals = Array.isArray(cf2.value) ? cf2.value : (cf2.value ? [cf2.value] : []);
+          h += `<div class="sel-group">`;
+          (cf2.options||[]).forEach(opt2 => {
+            const isSel = selVals.includes(opt2);
+            const fn = cf2.multi ? `toggleCheckChildOpt` : `selectCheckChild`;
+            h += `<button class="sel-opt${isSel?' sel':''}" onclick="${fn}(${si},${ii},${sti},${fi},${ci},'${esc(opt2)}')">${esc(opt2)}</button>`;
+          });
+          h += `</div>`;
+        } else {
+          h += `<textarea class="field-input" rows="1" oninput="autoResize(this)" onchange="updateCheckChildValue(${si},${ii},${sti},${fi},${ci},this.value)" style="resize:none;overflow:hidden;line-height:1.5;padding-top:4px;padding-bottom:4px">${esc(Array.isArray(cf2.value)?cf2.value.join(", "):cf2.value||"")}</textarea>`;
+        }
+        h += `</div>`;
+      });
+    }
+  });
+  return h;
+}
+
+// ═══════════════════════════════════════
+// イベントハンドラ
+// ═══════════════════════════════════════
+function toggleEdit() {
+  editMode = !editMode;
+  const btn = document.getElementById('editBtn');
+  btn.classList.toggle('active', editMode);
+  btn.textContent = editMode ? '✏️ 編集中' : '✏️ 編集';
+  if (!editMode) save();
+  render();
+}
+
+function toggleCheck(si, ii) {
+  if (editMode) return;
+  data.sections[si].items[ii].checked = !data.sections[si].items[ii].checked;
+  save(); render();
+}
+
+function selectSubtype(si, ii, sti) {
+  // 単一選択
+  data.sections[si].items[ii].subtypes.forEach((s, i) => s.selected = (i === sti));
+  save(); render();
+}
+
+function toggleSubtype(si, ii, sti) {
+  // 複数選択トグル
+  const st = data.sections[si].items[ii].subtypes[sti];
+  st.selected = !st.selected;
+  save(); render();
+}
+
+function toggleCheckFieldMulti(si, ii, sti, fi, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.multi = val;
+  f.value = val ? [] : '';
+  save(); render();
+}
+function toggleMultiSelect(si, ii, val) {
+  data.sections[si].items[ii].multiSelect = val;
+  // 単一に戻す時は最初の選択だけ残す
+  if (!val) {
+    const subtypes = data.sections[si].items[ii].subtypes;
+    const firstSel = subtypes.findIndex(s => s.selected);
+    subtypes.forEach((s, i) => s.selected = (i === (firstSel >= 0 ? firstSel : 0)));
+  }
+  save(); render();
+}
+
+function selectOpt(si, ii, sti, fi, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  if (f.multi) {
+    const vals = Array.isArray(f.value) ? [...f.value] : (f.value ? [f.value] : []);
+    const idx = vals.indexOf(val);
+    if (idx >= 0) vals.splice(idx, 1); else vals.push(val);
+    f.value = vals;
+  } else {
+    f.value = val;
+  }
+  save(); render();
+}
+
+// 値更新
+function updateSecTitle(si, v) { data.sections[si].title = v; save(); }
+function updateFieldLabel(si, fi, v) { data.sections[si].fields[fi].label = v; save(); }
+function updateFieldValue(si, fi, v) { data.sections[si].fields[fi].value = v; save(); }
+function updateSunpouLabel(si, fi, v) { data.sections[si].fields[fi].label = v; save(); }
+function updateSunpouValue(si, fi, v) { data.sections[si].fields[fi].value = v; save(); }
+function updateNoteText(si, v) { data.sections[si].note = v; save(); }
+function updateNoteValue(si, v) { data.sections[si].value = v; save(); }
+function updateNoteCaution(si, v) { data.sections[si].caution = v; save(); }
+function updateCheckName(si, ii, v) {
+  data.sections[si].items[ii].name = v;
+  save();
+}
+function updateSubtypeName(si, ii, sti, v) {
+  data.sections[si].items[ii].subtypes[sti].name = v;
+  save();
+}
+function updateCheckContent(si, ii, v) { data.sections[si].items[ii].content = v; save(); }
+function updateCheckCaution(si, ii, v) { data.sections[si].items[ii].caution = v; save(); }
+function updateCheckNote(si, ii, v) { data.sections[si].items[ii].note = v; save(); }
+function toggleCheckNote(si, ii, val) { data.sections[si].items[ii].showNote = val; save(); render(); }
+function updateCheckFieldLabel(si, ii, sti, fi, v) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.label = v; save();
+}
+function updateCheckFieldValue(si, ii, sti, fi, v) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.value = v; save();
+}
+function updateCheckFieldNote(si, ii, sti, fi, v) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.note = v; save();
+}
+
+// 追加・削除
+function addSection() {
+  data.sections.push({ id: uid(), title: '新しいセクション', type: 'fields', fields: [] });
+  save(); render();
+}
+function deleteSection(si) {
+  if (!confirm('このセクションを削除しますか？')) return;
+  data.sections.splice(si, 1);
+  save(); render();
+}
+function addField(si, type='text') {
+  if (type === 'select') {
+    data.sections[si].fields.push({ id: uid(), label: '項目名', type: 'select', options: ['選択肢1', '選択肢2'], value: '' });
+  } else {
+    data.sections[si].fields.push({ id: uid(), label: '項目名', type: 'text', value: '' });
+  }
+  save(); render();
+}
+function toggleSectionMulti(si, fi, val) {
+  data.sections[si].fields[fi].multi = val;
+  data.sections[si].fields[fi].value = val ? [] : '';
+  save(); render();
+}
+function toggleSectionChildMulti(si, fi, matchValue, ci, val) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.multi = val; targets[ci].field.value = val ? [] : ''; save(); render(); }
+}
+function toggleSectionChildOpt(si, fi, ci, val) {
+  const child = (data.sections[si].fields[fi].children||[])[ci];
+  if (!child) return;
+  const vals = Array.isArray(child.field.value) ? [...child.field.value] : [];
+  const idx = vals.indexOf(val);
+  if (idx >= 0) vals.splice(idx, 1); else vals.push(val);
+  child.field.value = vals;
+  save(); render();
+}
+function updateSectionChildOption(si, fi, matchValue, ci, oi, val) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.options[oi] = val; save(); }
+}
+function deleteSectionChildOption(si, fi, matchValue, ci, oi) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.options.splice(oi, 1); save(); render(); }
+}
+function addSectionChildOption(si, fi, matchValue, ci) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { if (!targets[ci].field.options) targets[ci].field.options=[]; targets[ci].field.options.push('選択肢'); save(); render(); }
+}
+function addSectionChild(si, fi, matchValue, type) {
+  const f = data.sections[si].fields[fi];
+  if (!f.children) f.children = [];
+  if (type === 'select') {
+    f.children.push({ matchValue, field: { id: uid(), label: '項目名', type: 'select', options: ['選択肢1', '選択肢2'], value: '' } });
+  } else {
+    f.children.push({ matchValue, field: { id: uid(), label: '項目名', type: 'text', value: '' } });
+  }
+  save(); render();
+}
+function deleteSectionChild(si, fi, matchValue, ci) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  const idx = f.children.indexOf(targets[ci]);
+  if (idx >= 0) f.children.splice(idx, 1);
+  save(); render();
+}
+function updateSectionChildLabel(si, fi, matchValue, ci, val) {
+  const f = data.sections[si].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.label = val; save(); }
+}
+function selectSectionOpt(si, fi, val) {
+  const f = data.sections[si].fields[fi];
+  if (f.multi) {
+    const vals = Array.isArray(f.value) ? [...f.value] : (f.value ? [f.value] : []);
+    const idx = vals.indexOf(val);
+    if (idx >= 0) vals.splice(idx, 1); else vals.push(val);
+    f.value = vals;
+  } else {
+    f.value = val;
+  }
+  save(); render();
+}
+function selectChildOpt(si, fi, ci, val) {
+  const child = (data.sections[si].fields[fi].children || [])[ci];
+  if (child) { child.field.value = val; save(); render(); }
+}
+function updateChildValue(si, fi, ci, val) {
+  const child = (data.sections[si].fields[fi].children || [])[ci];
+  if (child) { child.field.value = val; save(); }
+}
+function updateSectionSelectOption(si, fi, oi, val) {
+  data.sections[si].fields[fi].options[oi] = val; save();
+}
+function deleteSectionSelectOption(si, fi, oi) {
+  data.sections[si].fields[fi].options.splice(oi, 1); save(); render();
+}
+function addSectionSelectOption(si, fi) {
+  if (!data.sections[si].fields[fi].options) data.sections[si].fields[fi].options = [];
+  data.sections[si].fields[fi].options.push('選択肢'); save(); render();
+}
+function deleteField(si, fi) {
+  data.sections[si].fields.splice(fi, 1);
+  save(); render();
+}
+function addSunpouField(si) {
+  data.sections[si].fields.push({ id: uid(), label: '新しい寸法', value: '' });
+  save(); render();
+}
+function deleteSunpouField(si, fi) {
+  data.sections[si].fields.splice(fi, 1);
+  save(); render();
+}
+function addCheckItem(si) {
+  data.sections[si].items.push({ id: uid(), name: '新しい部品', checked: false, fields: [{ id: uid(), label: '内容', type: 'area', value: '' }] });
+  save(); render();
+}
+function deleteCheckItem(si, ii) {
+  if (!confirm('この項目を削除しますか？')) return;
+  data.sections[si].items.splice(ii, 1);
+  save(); render();
+}
+function addSubtype(si, ii) {
+  const item = data.sections[si].items[ii];
+  if (!item.subtypes) item.subtypes = [];
+  // fieldsをsubtypesに移行
+  if (item.fields && item.fields.length > 0 && item.subtypes.length === 0) {
+    item.subtypes.push({ id: uid(), name: '種別1', selected: true, fields: item.fields });
+    delete item.fields;
+  }
+  item.subtypes.push({ id: uid(), name: '新しい種別', selected: false, fields: [] });
+  save(); render();
+}
+function deleteSubtype(si, ii, sti) {
+  data.sections[si].items[ii].subtypes.splice(sti, 1);
+  if (data.sections[si].items[ii].subtypes.length > 0) {
+    data.sections[si].items[ii].subtypes[0].selected = true;
+  }
+  save(); render();
+}
+function addItemField(si, ii, type='text') {
+  const item = data.sections[si].items[ii];
+  if (!item.fields) item.fields = [];
+  delete item.content;
+  if (type === 'select') {
+    item.fields.push({ id: uid(), label: '項目名', type: 'select', options: ['選択肢1', '選択肢2'], value: '' });
+  } else {
+    item.fields.push({ id: uid(), label: '項目名', value: '' });
+  }
+  save(); render();
+}
+function addSubtypeField(si, ii, sti, type='text') {
+  if (type === 'select') {
+    data.sections[si].items[ii].subtypes[sti].fields.push({ id: uid(), label: '項目名', type: 'select', options: ['選択肢1', '選択肢2'], value: '' });
+  } else {
+    data.sections[si].items[ii].subtypes[sti].fields.push({ id: uid(), label: '項目名', value: '' });
+  }
+  save(); render();
+}
+function deleteCheckField(si, ii, sti, fi) {
+  const item = data.sections[si].items[ii];
+  if (sti == -1) item.fields.splice(fi, 1);
+  else item.subtypes[sti].fields.splice(fi, 1);
+  save(); render();
+}
+
+// ── 並び替え関数 ──
+function moveSection(si, dir) {
+  const arr = data.sections;
+  const ni = si + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[si], arr[ni]] = [arr[ni], arr[si]];
+  save(); render();
+}
+function moveCheckItem(si, ii, dir) {
+  const arr = data.sections[si].items;
+  const ni = ii + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[ii], arr[ni]] = [arr[ni], arr[ii]];
+  save(); render();
+}
+function updateFieldNote(si, fi, v) { data.sections[si].fields[fi].note = v; save(); }
+function moveSunpouField(si, fi, dir) {
+  const arr = data.sections[si].fields;
+  const ni = fi + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[fi], arr[ni]] = [arr[ni], arr[fi]];
+  save(); render();
+}
+function moveField(si, fi, dir) {
+  const arr = data.sections[si].fields;
+  const ni = fi + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[fi], arr[ni]] = [arr[ni], arr[fi]];
+  save(); render();
+}
+function moveCheckField(si, ii, sti, fi, dir) {
+  const item = data.sections[si].items[ii];
+  const arr = sti == -1 ? item.fields : item.subtypes[sti].fields;
+  const ni = fi + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[fi], arr[ni]] = [arr[ni], arr[fi]];
+  save(); render();
+}
+
+// ── 交換部品・子フィールド操作 ──
+function toggleCheckChildMulti(si, ii, sti, fi, matchValue, ci, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.multi = val; targets[ci].field.value = val ? [] : ''; save(); render(); }
+}
+function toggleCheckChildOpt(si, ii, sti, fi, ci, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const child = f.children[ci];
+  if (!child) return;
+  const vals = Array.isArray(child.field.value) ? [...child.field.value] : [];
+  const idx = vals.indexOf(val);
+  if (idx >= 0) vals.splice(idx, 1); else vals.push(val);
+  child.field.value = vals;
+  save(); render();
+}
+function updateCheckChildOption(si, ii, sti, fi, matchValue, ci, oi, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.options[oi] = val; save(); }
+}
+function deleteCheckChildOption(si, ii, sti, fi, matchValue, ci, oi) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.options.splice(oi, 1); save(); render(); }
+}
+function addCheckChildOption(si, ii, sti, fi, matchValue, ci) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { if (!targets[ci].field.options) targets[ci].field.options=[]; targets[ci].field.options.push('選択肢'); save(); render(); }
+}
+function addCheckChild(si, ii, sti, fi, matchValue, type) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  if (!f.children) f.children = [];
+  if (type === 'select') {
+    f.children.push({ matchValue, field: { id: uid(), label: '項目名', type: 'select', options: ['選択肢1', '選択肢2'], value: '' } });
+  } else {
+    f.children.push({ matchValue, field: { id: uid(), label: '項目名', type: 'text', value: '' } });
+  }
+  save(); render();
+}
+function deleteCheckChild(si, ii, sti, fi, matchValue, ci) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  const target = targets[ci];
+  const idx = f.children.indexOf(target);
+  if (idx >= 0) f.children.splice(idx, 1);
+  save(); render();
+}
+function updateCheckChildLabel(si, ii, sti, fi, matchValue, ci, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  const targets = (f.children||[]).filter(c=>c.matchValue===matchValue);
+  if (targets[ci]) { targets[ci].field.label = val; save(); }
+}
+function selectCheckChild(si, ii, sti, fi, ci, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  if (f.children && f.children[ci]) { f.children[ci].field.value = val; save(); render(); }
+}
+function updateCheckChildValue(si, ii, sti, fi, ci, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  if (f.children && f.children[ci]) { f.children[ci].field.value = val; save(); }
+}
+
+function updateSelectOption(si, ii, sti, fi, oi, val) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.options[oi] = val; save();
+}
+function deleteSelectOption(si, ii, sti, fi, oi) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  f.options.splice(oi, 1); save(); render();
+}
+function addSelectOption(si, ii, sti, fi) {
+  const item = data.sections[si].items[ii];
+  const f = sti == -1 ? item.fields[fi] : item.subtypes[sti].fields[fi];
+  if (!f.options) f.options = [];
+  f.options.push('選択肢'); save(); render();
+}
+
+// ── 通常セクション（fieldsタイプ）の選択式対応 ──
+// ═══════════════════════════════════════
+// 初期化
+// ═══════════════════════════════════════
+load();
+render();
+</script>
+</body>
+</html>

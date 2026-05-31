@@ -122,7 +122,20 @@ button{cursor:pointer;font-family:inherit}
   <button class="back-btn">← 戻る</button>
   <div class="topbar-title">📋 OSD一式交換調査票</div>
   <button class="edit-btn" id="editBtn" onclick="toggleEdit()">✏️ 編集</button>
+  <button class="edit-btn" id="importBtn" onclick="showImport()" style="background:#0a1f0a;color:#a5d6a7;border-color:#1a3a1a">📥 データ移行</button>
   <button class="pdf-btn" onclick="window.print()">🖨️ PDF</button>
+</div>
+
+<div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;display:none;align-items:center;justify-content:center">
+  <div style="background:#0d1520;border:1px solid #1a2634;border-radius:12px;padding:20px;width:90%;max-width:480px">
+    <div style="color:#a5d6a7;font-size:13px;font-weight:700;margin-bottom:8px">📥 プロトからデータを移行</div>
+    <div style="color:#546e7a;font-size:11px;margin-bottom:12px">プロトファイルでエクスポートしたJSONを貼り付けてください</div>
+    <textarea id="importJson" rows="6" placeholder="JSONを貼り付け..." style="width:100%;background:#080e14;border:1px solid #1a2634;border-radius:6px;padding:8px;color:#cfd8dc;font-size:11px;font-family:monospace;resize:vertical;box-sizing:border-box"></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="doImport()" style="flex:1;padding:10px;border-radius:7px;border:none;background:#a5d6a7;color:#080e14;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">移行する</button>
+      <button onclick="hideImport()" style="flex:1;padding:10px;border-radius:7px;border:1px solid #1a2634;background:transparent;color:#546e7a;font-size:12px;cursor:pointer;font-family:inherit">キャンセル</button>
+    </div>
+  </div>
 </div>
 
 <div class="sheet" id="sheet"></div>
@@ -1227,6 +1240,31 @@ function addSelectOption(si, ii, sti, fi) {
 // 初期化
 // ═══════════════════════════════════════
 const hadLocalStorage = !!(localStorage.getItem('osd_form_v3') || localStorage.getItem('osd_form_v2'));
+
+function showImport() {
+  const m = document.getElementById('importModal');
+  m.style.display = 'flex';
+}
+function hideImport() {
+  const m = document.getElementById('importModal');
+  m.style.display = 'none';
+  document.getElementById('importJson').value = '';
+}
+function doImport() {
+  const json = document.getElementById('importJson').value.trim();
+  if (!json) { alert('JSONを貼り付けてください'); return; }
+  try {
+    const parsed = JSON.parse(json);
+    data = parsed;
+    migrate(data);
+    save();
+    render();
+    hideImport();
+    alert('移行完了！Firestoreに保存しました。');
+  } catch(e) {
+    alert('JSONが正しくありません: ' + e.message);
+  }
+}
 load();
 render();
 

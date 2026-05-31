@@ -255,7 +255,8 @@ function sortByDate(rows) {
 // ─── localStorage ────────────────────────────────────
 function lsLoad() {
   try {
-    const r=localStorage.getItem(LS_KEY);
+    let r=localStorage.getItem(LS_KEY);
+    if(!r){for(const k of ['genba_v3','genba_v2','genba_v1']){const o=localStorage.getItem(k);if(o){r=o;break;}}}
     const d = r?JSON.parse(r):{rows:{},sections:DEFAULT_SECTIONS,holidays:DEFAULT_HOLIDAYS};
     if(!d.holidays) d.holidays=DEFAULT_HOLIDAYS;
     HOLIDAYS = new Set(d.holidays);
@@ -1649,13 +1650,13 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
 
       {/* タブバー */}
       <div style={{background:"#0a1018",borderBottom:"1px solid #1a2634",display:"flex",overflowX:"auto"}}>
-        {[["list","📋 日報"],["manual","📘 技術資料"]].map(([key,label])=>(
+        {[["list","📋 日報"],["info","📂 情報共有"]].map(([key,label])=>(
           <button key={key} onClick={()=>setWorkerTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:workerTab===key?"#4fc3f7":"#37474f",fontWeight:workerTab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:workerTab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit",whiteSpace:"nowrap"}}>{label}</button>
         ))}
       </div>
 
-      {workerTab==="manual"&&(
-        <iframe src={import.meta.env.BASE_URL + 'shutter-manual.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="業務マニュアル"/>
+      {workerTab==="info"&&(
+        <InfoShareView db={db} setDb={setDb} isAdmin={false} userName={user.name}/>
       )}
 
       {workerTab==="list"&&<>
@@ -2378,7 +2379,7 @@ ${pdfCols.ake?`<td></td>`:""}
       </div>
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",flexWrap:"wrap",padding:"0 18px"}}>
-        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["manual","📘 技術資料"],["osd","📋 OSD調査票"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
+        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:tab===key?"#4fc3f7":"#37474f",fontWeight:tab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:tab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit"}}>{label}</button>
         ))}
         <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center"}}>
@@ -2791,14 +2792,6 @@ ${pdfCols.ake?`<td></td>`:""}
 
       {tab==="info"&&(
         <InfoShareView db={db} setDb={setDb} isAdmin={true} userName="管理者"/>
-      )}
-
-      {tab==="manual"&&(
-        <iframe src={import.meta.env.BASE_URL + 'shutter-manual.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="業務マニュアル"/>
-      )}
-
-      {tab==="osd"&&(
-        <iframe src={import.meta.env.BASE_URL + 'osd-chosahyo.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="OSD一式交換調査票"/>
       )}
 
       {/* ─── 祝日編集タブ ─── */}
@@ -3763,6 +3756,7 @@ function InfoShareView({ db, setDb, isAdmin, userName }) {
   const [movingFolder, setMovingFolder] = useState(null);
   const [renamingFolder, setRenamingFolder] = useState(null);
   const [renameInput, setRenameInput] = useState("");
+  const [toolView, setToolView] = useState(null);
   const fileInputRef = useRef(null);
 
   const saveInfo = (update) => {
@@ -3888,6 +3882,21 @@ function InfoShareView({ db, setDb, isAdmin, userName }) {
 
   return (
     <div style={{ padding: 16 }}>
+      {/* 技術資料 iframeオーバーレイ */}
+      {toolView && (
+        <div style={{position:"fixed",inset:0,background:"#080e14",zIndex:200,display:"flex",flexDirection:"column"}}>
+          <div style={{padding:"8px 14px",background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+            <button onClick={()=>setToolView(null)} style={{...btnBase,background:"transparent",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:12}}>← 戻る</button>
+            <span style={{color:"#cfd8dc",fontSize:13,fontWeight:700}}>{toolView==='manual'?'📘 業務マニュアル':'📋 OSD一式交換調査票'}</span>
+          </div>
+          <iframe
+            src={import.meta.env.BASE_URL + (toolView==='manual'?'shutter-manual.html':'osd-chosahyo.html')}
+            style={{flex:1,border:"none",display:"block"}}
+            title={toolView==='manual'?'業務マニュアル':'OSD一式交換調査票'}
+          />
+        </div>
+      )}
+
       {/* パンくず */}
       <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
         <span onClick={() => setCurrentId(null)} style={{ color: "#4fc3f7", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>📁 情報共有</span>
@@ -3898,6 +3907,23 @@ function InfoShareView({ db, setDb, isAdmin, userName }) {
           </span>
         ))}
       </div>
+
+      {/* 技術資料セクション（ルートレベル） */}
+      {currentId === null && (
+        <div style={{marginBottom:16,padding:"10px 14px",background:"#0d1520",border:"1px solid #1a2634",borderRadius:8}}>
+          <div style={{color:"#78909c",fontSize:11,fontWeight:700,marginBottom:8,letterSpacing:1}}>📚 技術資料</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setToolView('manual')}
+              style={{...btnBase,background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:12}}>
+              📘 業務マニュアル
+            </button>
+            <button onClick={()=>setToolView('osd')}
+              style={{...btnBase,background:"#1a1400",color:"#ffd54f",border:"1px solid #2a2000",fontSize:12}}>
+              📋 OSD調査票
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* フォルダ一覧 */}
       {childFolders.length > 0 && (
@@ -4058,6 +4084,8 @@ export default function App() {
   const [session, setSession] = useState(()=>{try{const s=sessionStorage.getItem("session");return s?JSON.parse(s):null;}catch{return null;}});
   const [synced, setSynced] = useState(false);
   const [gateOk, setGateOk] = useState(()=>sessionStorage.getItem("gateOk")==="1");
+  const dbRef = useRef(db);
+  useEffect(()=>{ dbRef.current = db; },[db]);
 
   useEffect(()=>{
     const unsub = onSnapshot(doc(firestore,"db","main"), snap=>{
@@ -4071,6 +4099,23 @@ export default function App() {
       setSynced(true);
     }, ()=>setSynced(true));
     return unsub;
+  },[]);
+
+  useEffect(()=>{
+    const handler = (e) => {
+      if(!e.data) return;
+      if(e.data.type==='osd_save'){
+        setDb(prev=>{const nd={...prev,osdFormData:e.data.d};lsSave(nd);return nd;});
+      }
+      if(e.data.type==='osd_ready'){
+        const iframe = document.querySelector('iframe[title="OSD一式交換調査票"]');
+        if(iframe && dbRef.current.osdFormData){
+          iframe.contentWindow.postMessage({type:'osd_init',d:dbRef.current.osdFormData},'*');
+        }
+      }
+    };
+    window.addEventListener('message',handler);
+    return ()=>window.removeEventListener('message',handler);
   },[]);
 
   if(!synced) return (

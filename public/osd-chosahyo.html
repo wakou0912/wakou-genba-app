@@ -275,6 +275,7 @@ const CURRENT_VERSION = 3;
 function save() {
   localStorage.setItem('osd_form_v3', JSON.stringify(data));
   localStorage.setItem('osd_form_version', CURRENT_VERSION);
+  try { window.parent.postMessage({type:'osd_save', d: JSON.stringify(data)}, '*'); } catch {}
 }
 
 function load() {
@@ -1227,6 +1228,19 @@ function addSelectOption(si, ii, sti, fi) {
 // ═══════════════════════════════════════
 load();
 render();
+
+// 親アプリ（Firestoreブリッジ）との同期
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'osd_init' && e.data.d) {
+    try {
+      const parsed = JSON.parse(e.data.d);
+      data = parsed;
+      migrate(data);
+      render();
+    } catch {}
+  }
+});
+try { window.parent.postMessage({type: 'osd_ready'}, '*'); } catch {}
 </script>
 </body>
 </html>

@@ -2378,7 +2378,7 @@ ${pdfCols.ake?`<td></td>`:""}
       </div>
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",flexWrap:"wrap",padding:"0 18px"}}>
-        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["manual","📘 技術資料"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
+        {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["manual","📘 技術資料"],["osd","📋 OSD調査票"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:tab===key?"#4fc3f7":"#37474f",fontWeight:tab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:tab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit"}}>{label}</button>
         ))}
         <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center"}}>
@@ -2795,6 +2795,10 @@ ${pdfCols.ake?`<td></td>`:""}
 
       {tab==="manual"&&(
         <iframe src={import.meta.env.BASE_URL + 'shutter-manual.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="業務マニュアル"/>
+      )}
+
+      {tab==="osd"&&(
+        <iframe src={import.meta.env.BASE_URL + 'osd-chosahyo.html'} style={{width:"100%",height:"calc(100vh - 112px)",border:"none",display:"block"}} title="OSD一式交換調査票"/>
       )}
 
       {/* ─── 祝日編集タブ ─── */}

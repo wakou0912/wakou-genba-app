@@ -1012,12 +1012,10 @@ function Login({onLogin, db={}, onSave, extraCoworkers=[]}) {
             <button onClick={()=>setAdminMode(true)} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid #1a2634",background:"transparent",color:"#263238",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
               管理者ログイン →
             </button>
-            {(db.infoFolders||[]).length > 0 && (
-              <button onClick={()=>setInfoShareMode(true)}
-                style={{width:"100%",marginTop:10,padding:"10px",borderRadius:8,border:"1px solid #1a3a1a",background:"#0a1f0a",color:"#a5d6a7",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                📂 情報共有
-              </button>
-            )}
+            <button onClick={()=>setInfoShareMode(true)}
+              style={{width:"100%",marginTop:10,padding:"10px",borderRadius:8,border:"1px solid #1a3a1a",background:"#0a1f0a",color:"#a5d6a7",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              📂 情報共有
+            </button>
           </>
         ) : (
           <>
@@ -1055,6 +1053,7 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
   const [pendingFile, setPendingFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [showBestReport, setShowBestReport] = useState(false);
+  const [toolView, setToolView] = useState(null);
   const fileInputRef = useRef(null);
 
   const childFolders = folders.filter(f => f.parentId === currentId);
@@ -1114,6 +1113,22 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
           <span style={{color:"#ffd54f",fontSize:12,fontWeight:700}}>🏆 ベスト日報</span>
         </div>
         <BestReportView db={db} setDb={nd=>{if(onSave)onSave(nd);}} showMsg={null} isAdmin={false} allRows={[]} user={{name:selectedName||""}}/>
+      </div>
+    );
+  }
+
+  if (toolView) {
+    return (
+      <div style={{position:"fixed",inset:0,background:"#080e14",zIndex:300,display:"flex",flexDirection:"column"}}>
+        <div style={{padding:"8px 14px",background:"#0d1520",borderBottom:"1px solid #1a2634",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <button onClick={()=>setToolView(null)} style={{padding:"6px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"transparent",color:"#4fc3f7",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← 戻る</button>
+          <span style={{color:"#cfd8dc",fontSize:13,fontWeight:700}}>{toolView==='manual'?'📘 業務マニュアル':'📋 OSD一式交換調査票'}</span>
+        </div>
+        <iframe
+          src={import.meta.env.BASE_URL + (toolView==='manual'?'shutter-manual.html':'osd-chosahyo.html')}
+          style={{flex:1,border:"none",display:"block"}}
+          title={toolView==='manual'?'業務マニュアル':'OSD一式交換調査票'}
+        />
       </div>
     );
   }
@@ -1185,14 +1200,27 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
             ✏️ 投稿する
           </button>
         )}
-        {/* ベスト日報エントリ（ホームのみ表示） */}
-        {currentId === null && (
+        {/* 技術資料・ベスト日報（ホームのみ表示） */}
+        {currentId === null && (<>
+          <div style={{padding:"8px 10px",background:"#080e14",borderRadius:7,border:"1px solid #1a2634"}}>
+            <div style={{color:"#546e7a",fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:6}}>📚 技術資料</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>setToolView('manual')}
+                style={{padding:"6px 14px",borderRadius:6,border:"1px solid #1e4a5a",background:"#0d2030",color:"#4fc3f7",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                📘 業務マニュアル
+              </button>
+              <button onClick={()=>setToolView('osd')}
+                style={{padding:"6px 14px",borderRadius:6,border:"1px solid #2a2000",background:"#1a1400",color:"#ffd54f",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                📋 OSD調査票
+              </button>
+            </div>
+          </div>
           <div onClick={()=>setShowBestReport(true)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#080e14",borderRadius:7,border:"1px solid #3a2a00",cursor:"pointer"}}>
             <span style={{fontSize:18}}>🏆</span>
             <div style={{color:"#ffd54f",fontSize:13,fontWeight:700}}>ベスト日報</div>
           </div>
-        )}
+        </>)}
         {childFolders.map(f=>(
           <div key={f.id} onClick={()=>goFolder(f.id)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#080e14",borderRadius:7,border:"1px solid #1a2634",cursor:"pointer"}}>

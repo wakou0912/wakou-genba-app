@@ -150,7 +150,7 @@ ${e.map(e=>{let t=bP(e.date,e.startTime),n=e.memo?`<div style="font-size:9px;col
                     <td><strong>${e.genba||``}</strong>${i}</td>
                     ${F.worker?`<td>${e.worker||``}</td>`:``}
                     ${F.subject?`<td>${(e.subjects||[]).join(`/`)||``}</td>`:``}
-                    ${F.eigyo?`<td>${(e.eigyoList||[]).join(`・`)||``}</td>`:``}
+                    ${F.eigyo?`<td>${[(e.sections||[]).join(`・`),(e.eigyoList||[]).join(`・`)].filter(Boolean).join(` / `)||``}</td>`:``}
                     ${F.yotei?`<td style="text-align:right">${e.yotei?`¥`+Number(e.yotei).toLocaleString():``}</td>`:``}
                     ${F.edi?`<td style="text-align:right;font-weight:bold;color:#2e7d32">${e.edi?`¥`+Number(e.edi).toLocaleString():``}</td>`:``}
                     ${F.ake?`<td style="text-align:center">${e.ake?`✓`:``}</td>`:``}

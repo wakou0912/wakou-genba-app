@@ -2227,14 +2227,14 @@ function AdminView({db, setDb, onLogout}) {
 <table>
 <thead><tr>
   <th>日付</th><th>時刻</th><th>区分</th><th>現場名</th><th>作業員</th>
-  <th>作業科目</th><th>営業名</th><th>予定金額</th><th>予定金額</th>
+  <th>作業科目</th><th>所課</th><th>営業名</th><th>予定金額</th><th>請求金額</th>
   <th>明け</th><th>報告</th><th>請求</th><th>メモ</th>
 </tr></thead>
 <tbody>
 ${rows.map(r=>{
   const k=getKubun(r.date,r.startTime);
   const memo = r.memo?`<div style="font-size:9px;color:#666;margin-top:2px;word-break:break-all;white-space:pre-wrap">${r.memo}</div>`:"";
-  return "<tr><td>"+r.date+"</td><td>"+(r.startTime||"")+(r.endTime?" 〇 "+r.endTime:"")+"</td><td>"+k.label+"</td><td><strong>"+(r.genba||"")+"</strong>"+memo+"</td><td>"+(r.worker||"")+"</td><td>"+(r.subjects||[]).join("/")+(((r.inspectionTypes||[]).length>0?" ("+(r.inspectionTypes||[]).join("・")+")":""))+"</td><td>"+(r.eigyoList||[]).join("・")+"</td><td style='text-align:right'>"+(r.yotei?"¥"+Number(r.yotei).toLocaleString():"")+"</td><td style='text-align:right;font-weight:bold;color:#2e7d32'>"+(r.edi?"¥"+Number(r.edi).toLocaleString():"")+"</td><td style='text-align:center;font-weight:bold'>"+(r.ake?"✓":"")+"</td></tr>";
+  return "<tr><td>"+r.date+"</td><td>"+(r.startTime||"")+(r.endTime?" 〇 "+r.endTime:"")+"</td><td>"+k.label+"</td><td><strong>"+(r.genba||"")+"</strong>"+memo+"</td><td>"+(r.worker||"")+"</td><td>"+(r.subjects||[]).join("/")+(((r.inspectionTypes||[]).length>0?" ("+(r.inspectionTypes||[]).join("・")+")":""))+"</td><td>"+(r.sections||[]).join("・")+"</td><td>"+(r.eigyoList||[]).join("・")+"</td><td style='text-align:right'>"+(r.yotei?"¥"+Number(r.yotei).toLocaleString():"")+"</td><td style='text-align:right;font-weight:bold;color:#2e7d32'>"+(r.edi?"¥"+Number(r.edi).toLocaleString():"")+"</td><td style='text-align:center;font-weight:bold'>"+(r.ake?"✓":"")+"</td></tr>";
 }).join("")}
 </tbody></table></body></html>`;
     const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);

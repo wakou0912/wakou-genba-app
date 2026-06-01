@@ -2320,7 +2320,7 @@ ${rows.map(r=>{
                     <td><strong>${r.genba||""}</strong>${memo}</td>
                     ${pdfCols.worker?`<td>${r.worker||""}</td>`:""}
                     ${pdfCols.subject?`<td>${(r.subjects||[]).join("/")||""}</td>`:""}
-                    ${pdfCols.eigyo?`<td>${(r.eigyoList||[]).join("・")||""}</td>`:""}
+                    ${pdfCols.eigyo?`<td>${[(r.sections||[]).join("・"),(r.eigyoList||[]).join("・")].filter(Boolean).join(" / ")||""}</td>`:""}
                     ${pdfCols.yotei?`<td style="text-align:right">${r.yotei?"¥"+Number(r.yotei).toLocaleString():""}</td>`:""}
                     ${pdfCols.edi?`<td style="text-align:right;font-weight:bold;color:#2e7d32">${r.edi?"¥"+Number(r.edi).toLocaleString():""}</td>`:""}
                     ${pdfCols.ake?`<td style="text-align:center">${r.ake?"✓":""}</td>`:"" }

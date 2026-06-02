@@ -515,7 +515,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
       if(SYNC_PREFIXES.some(p=>k===p||k.startsWith(p+'S')||k.startsWith(p+'_')||k.startsWith(p+'d')||k.startsWith(p+'P')||k.startsWith(p+'B')||k.startsWith(p+'M')||k===p)) d[k]=f[k];
     });
     // 明示的にカバー
-    ['count7','count3','calcMult'].forEach(k=>{ d[k]=f[k]||''; });
+    ['count7','count3','calcMult','subjects','inspectionTypes'].forEach(k=>{ d[k]=f[k]||''; });
     Object.keys(f).filter(k=>k.startsWith('boka')||k.startsWith('sogo')||k.startsWith('teiki')||k.startsWith('door')).forEach(k=>{d[k]=f[k];});
     return d;
   };

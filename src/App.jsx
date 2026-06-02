@@ -1671,10 +1671,10 @@ function WorkerView({user, db, setDb, onLogout}) {
     return true;
   });
 
-  const totalYotei = myRows.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
+  const totalYotei = filtered.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
   const SPRIO = ["ワコウ","施工管理","点検","工事","調査","その他"];
   const subjectSummary = {};
-  myRows.forEach(r=>{
+  filtered.forEach(r=>{
     const s=SPRIO.find(p=>(r.subjects||[]).includes(p))||(r.subjects||[])[0];
     if(!s)return;
     if(!subjectSummary[s])subjectSummary[s]={count:0,yotei:0};

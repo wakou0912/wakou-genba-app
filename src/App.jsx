@@ -3130,7 +3130,12 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
     const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
     const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
     return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, row:r};
-  }).sort((a,b)=>a.dates[0]>b.dates[0]?-1:1);
+  }).sort((a,b)=>{
+    if(a.dates[0]>b.dates[0])return 1;
+    if(a.dates[0]<b.dates[0])return -1;
+    const ta=a.startTime||"",tb=b.startTime||"";
+    return ta>tb?1:ta<tb?-1:0;
+  });
 
   const exportSelected = (genbas) => {
     const targets = genbas.filter(g=>selected.has(g.id));

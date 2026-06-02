@@ -3333,29 +3333,38 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                   </div>
                 )}
 
-                {/* 割合計算 */}
-                {(g.bokaAmt+g.sogoAmt+g.teikiAmt)>0&&g.worker.length>0&&(()=>{
+                {/* 割合計算（count7/count3から自動表示） */}
+                {(g.bokaAmt+g.sogoAmt+g.teikiAmt)>0&&(g.row.count7||g.row.count3)&&(()=>{
                   const total=g.bokaAmt+g.sogoAmt+g.teikiAmt;
-                  const workerRatios=g.worker.map(w=>parseFloat(getRatio(g.id,w))||0);
-                  const totalRatio=workerRatios.reduce((s,r)=>s+r,0);
+                  const n7=parseInt(g.row.count7)||0;
+                  const n3=parseInt(g.row.count3)||0;
+                  const totalParts=7*n7+3*n3;
+                  const amt7=totalParts>0&&n7>0?Math.floor(total*7/totalParts):0;
+                  const amt3=totalParts>0&&n3>0?Math.floor(total*3/totalParts):0;
                   return(
                     <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
-                      <div style={{color:"#546e7a",fontSize:10,fontWeight:700,marginBottom:8}}>割合計算</div>
+                      <div style={{color:"#546e7a",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算</div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        {g.worker.map((w,i)=>{
-                          const r=parseFloat(getRatio(g.id,w))||0;
-                          const amt=totalRatio>0?Math.floor(total*r/totalRatio):0;
-                          return(
-                            <div key={w} style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span style={{color:"#4fc3f7",fontSize:12,minWidth:80}}>{w}</span>
-                              <input type="text" inputMode="numeric" value={getRatio(g.id,w)}
-                                onChange={e=>setRatio(g.id,w,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))}
-                                placeholder="割合"
-                                style={{width:60,background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 8px",color:"#cfd8dc",fontSize:12,fontFamily:"inherit",textAlign:"center"}}/>
-                              {r>0&&totalRatio>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:12}}>¥{amt.toLocaleString()}</span>}
-                            </div>
-                          );
-                        })}
+                        {n7>0&&(
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:36}}>7割</span>
+                            <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n7}</span>
+                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
+                            {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
+                          </div>
+                        )}
+                        {n3>0&&(
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:36}}>3割</span>
+                            <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n3}</span>
+                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
+                            {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
+                          </div>
+                        )}
+                        {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
+                        {g.worker.length>0&&(
+                          <div style={{color:"#4fc3f7",fontSize:11,marginTop:2}}>{g.worker.join(" ／ ")}</div>
+                        )}
                       </div>
                     </div>
                   );

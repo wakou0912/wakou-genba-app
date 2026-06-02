@@ -3055,7 +3055,7 @@ function HolidayEditor({db, setDb, showMsg}) {
 // ═══════════════════════════════════════════════════════
 function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
   const [filterType, setFilterType] = useState("");
-  const [filterMonth, setFilterMonth] = useState("");
+  const [filterMonth, setFilterMonth] = useState(()=>new Date().toISOString().slice(0,7));
   const [selected, setSelected] = useState(new Set());
   const [ratios, setRatios] = useState({});
   const setRatio = (id, worker, val) => setRatios(p=>({...p,[id]:{...(p[id]||{}),[worker]:val}}));

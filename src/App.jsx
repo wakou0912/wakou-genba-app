@@ -1744,6 +1744,11 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
         <div style={{background:"#0d2030",border:"1px solid #1e4a5a",borderRadius:7,padding:"4px 12px",color:"#4fc3f7",fontSize:13,fontWeight:700}}>👤 {user.name}</div>
         {msg && <span style={{color:"#66bb6a",fontSize:12,fontWeight:600}}>{msg}</span>}
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {(db.workerTargets||{})[user.name]&&(
+            <span style={{color:"#ffd54f",fontWeight:700,fontSize:13}}>
+              🎯 ¥{Number((db.workerTargets||{})[user.name]).toLocaleString()}
+            </span>
+          )}
           <span style={{color:"#4fc3f7",fontWeight:800,fontSize:13}}>予定合計: ¥{totalYotei.toLocaleString()}</span>
 
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{...selA,minWidth:110}}>
@@ -3848,6 +3853,31 @@ function MasterEditor({db, setDb, showMsg}) {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 作業員別 目標金額 */}
+      <div style={{marginTop:24,padding:"16px",background:"#0d1520",borderRadius:10,border:"1px solid #1a2634"}}>
+        <div style={{color:"#ffd54f",fontWeight:700,fontSize:13,marginBottom:12}}>🎯 作業員別 目標金額</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {WORKERS.map(w=>{
+            const val = (db.workerTargets||{})[w]||"";
+            return(
+              <div key={w} style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{color:"#cfd8dc",fontSize:13,minWidth:80}}>{w}</span>
+                <input type="text" inputMode="numeric" value={val}
+                  onChange={e=>{
+                    const v=e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                    const nd={...db,workerTargets:{...(db.workerTargets||{}),[w]:v}};
+                    setDb(nd); lsSave(nd);
+                  }}
+                  placeholder="未設定（非表示）"
+                  style={{...sinp,width:140,textAlign:"right"}}/>
+                <span style={{color:"#546e7a",fontSize:12}}>円</span>
+                {val&&<span style={{color:"#ffd54f",fontSize:12}}>¥{Number(val).toLocaleString()}</span>}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

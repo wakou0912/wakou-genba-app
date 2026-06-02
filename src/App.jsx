@@ -489,9 +489,10 @@ function TeikiForm({form, set, prices}) {
 }
 
 // ─── EDIT MODAL ──────────────────────────────────────
-function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, onClose, extraCoworkers=[], onUpdateExtraCoworkers}) {
+function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, onClose, extraCoworkers=[], onUpdateExtraCoworkers, allRows=[], onSyncGenba}) {
   const [form, setForm] = useState({...row});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [syncModal, setSyncModal] = useState(null);
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
   const toggleSubject = s => { const c=form.subjects||[]; set("subjects",c.includes(s)?c.filter(x=>x!==s):[...c,s]); };
   const toggleSection = s => { const c=form.sections||[]; set("sections",c.includes(s)?c.filter(x=>x!==s):[...c,s]); };
@@ -499,13 +500,41 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
   const toggleEigyo = e => { const c=form.eigyoList||[]; set("eigyoList",c.includes(e)?c.filter(x=>x!==e):[...c,e]); };
   const isAdmin = role==="admin";
   const isOther = form.worker==="その他";
-  const canEditBasic = true; // 作業員も全項目編集可
-  const [calcMult, setCalcMult] = useState("なし");
+  const canEditBasic = true;
+  const calcMult = form.calcMult||"なし";
   const [coworkerInput, setCoworkerInput] = useState("");
-  const [count7, setCount7] = useState("");
-  const [count3, setCount3] = useState("");
+  const count7 = form.count7||"";
+  const count3 = form.count3||"";
   const addCoworker = (name) => { const n=name.trim(); if(!n)return; if(!(form.coworkers||[]).includes(n)) set("coworkers",[...(form.coworkers||[]),n]); setCoworkerInput(""); };
   const removeCoworker = (name) => set("coworkers",(form.coworkers||[]).filter(w=>w!==name));
+
+  const SYNC_PREFIXES = ['boka','sogo','teiki','door','count7','count3','calcMult'];
+  const getSyncData = (f) => {
+    const d = {};
+    Object.keys(f).forEach(k => {
+      if(SYNC_PREFIXES.some(p=>k===p||k.startsWith(p+'S')||k.startsWith(p+'_')||k.startsWith(p+'d')||k.startsWith(p+'P')||k.startsWith(p+'B')||k.startsWith(p+'M')||k===p)) d[k]=f[k];
+    });
+    // 明示的にカバー
+    ['count7','count3','calcMult'].forEach(k=>{ d[k]=f[k]||''; });
+    Object.keys(f).filter(k=>k.startsWith('boka')||k.startsWith('sogo')||k.startsWith('teiki')||k.startsWith('door')).forEach(k=>{d[k]=f[k];});
+    return d;
+  };
+
+  const handleSync = () => {
+    const targets = allRows.filter(r => r.id!==form.id && r.date===form.date && r.genba===form.genba);
+    if(targets.length===0){ alert("同日・同現場の他の入力はありません"); return; }
+    const syncData = getSyncData(form);
+    const conflicting = targets.filter(r => Object.keys(syncData).some(k=>String(r[k]||'')!==String(syncData[k]||'')));
+    setSyncModal({targets, conflicting, syncData});
+  };
+
+  const doSync = () => {
+    if(!syncModal||!onSyncGenba) return;
+    const syncData = {...syncModal.syncData, syncedBy: form.worker, syncedAt: Date.now()};
+    onSyncGenba(syncData, syncModal.targets.map(r=>r.id));
+    setSyncModal(null);
+    alert(`${syncModal.targets.length}件に反映しました`);
+  };
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
@@ -714,7 +743,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                       <div style={{color:"#546e7a",fontSize:10,marginBottom:6}}>割増</div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                         {[["なし",""],["夜間","×1.25"],["日祝","×1.35"],["日祝夜間","×1.6"]].map(([key,label])=>(
-                          <button key={key} onClick={()=>setCalcMult(key)}
+                          <button key={key} onClick={()=>set("calcMult",key)}
                             style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${calcMult===key?"#ffd54f":"#1a2634"}`,
                               background:calcMult===key?"#1a1500":"transparent",
                               color:calcMult===key?"#ffd54f":"#546e7a",
@@ -763,13 +792,13 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                         <div style={{display:"flex",flexDirection:"column",gap:8}}>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>7割</span>
-                            <input type="text" inputMode="numeric" value={count7} onChange={e=>setCount7(e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                            <input type="text" inputMode="numeric" value={count7} onChange={e=>set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>3割</span>
-                            <input type="text" inputMode="numeric" value={count3} onChange={e=>setCount3(e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                            <input type="text" inputMode="numeric" value={count3} onChange={e=>set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
                           </div>
@@ -778,11 +807,55 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                       </div>
                     );
                   })()}
+                  {/* 反映ボタン・最終更新者 */}
+                  {onSyncGenba && (
+                    <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffd54f20",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                      <button onClick={handleSync}
+                        style={{padding:"7px 16px",borderRadius:7,border:"none",background:"#0a1f0a",color:"#a5d6a7",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        📡 同じ現場に反映
+                      </button>
+                      {form.syncedBy && (
+                        <span style={{color:"#546e7a",fontSize:10}}>
+                          最終更新: {form.syncedBy}（{form.syncedAt?new Date(form.syncedAt).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}）
+                        </span>
+                      )}
+                    </div>
+                  )}
                   </div>
                 )}
               </div>
             )}
           </Field>
+
+          {/* 反映確認モーダル */}
+          {syncModal && (
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+              <div style={{background:"#0d1520",border:"1px solid #1a2634",borderRadius:12,padding:20,width:"100%",maxWidth:400}}>
+                <div style={{color:"#ffd54f",fontWeight:700,fontSize:13,marginBottom:12}}>📡 同じ現場に反映</div>
+                <div style={{color:"#cfd8dc",fontSize:12,marginBottom:10}}>
+                  {syncModal.conflicting.length>0 ? (
+                    <>
+                      <div style={{marginBottom:8}}>以下の方が異なる値で入力しています：</div>
+                      {syncModal.conflicting.map(r=>(
+                        <div key={r.id} style={{padding:"6px 10px",background:"#080e14",borderRadius:6,border:"1px solid #1a2634",marginBottom:6,fontSize:11}}>
+                          <span style={{color:"#4fc3f7",fontWeight:700}}>{r.worker}</span>
+                          {(r.count7||r.count3)&&<span style={{color:"#78909c",marginLeft:8}}>7割:{r.count7||"–"}人 / 3割:{r.count3||"–"}人</span>}
+                          {r.syncedBy&&<span style={{color:"#37474f",marginLeft:8}}>（最終更新:{r.syncedBy}）</span>}
+                        </div>
+                      ))}
+                      <div style={{color:"#78909c",marginTop:8}}>上書きして全員に反映しますか？</div>
+                    </>
+                  ) : (
+                    <div>{syncModal.targets.map(r=>r.worker).join("・")} に反映します</div>
+                  )}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={doSync} style={{flex:1,padding:"10px",borderRadius:7,border:"none",background:"#a5d6a7",color:"#080e14",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>反映する</button>
+                  <button onClick={()=>setSyncModal(null)} style={{flex:1,padding:"10px",borderRadius:7,border:"1px solid #1a2634",background:"transparent",color:"#546e7a",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>キャンセル</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 所課・営業 */}
           <Field label="所課（複数選択可）">
@@ -1562,6 +1635,15 @@ function WorkerView({user, db, setDb, onLogout}) {
     setEditRow(null); showMsg("✓ 削除しました");
   };
 
+  const syncGenba = (syncData, rowIds) => {
+    const newDbRows = {...db.rows};
+    for(const w of Object.keys(newDbRows)){
+      newDbRows[w] = newDbRows[w].map(r=>rowIds.includes(r.id)?{...r,...syncData}:r);
+    }
+    const newDb = {...db, rows:newDbRows};
+    setDb(newDb); lsSave(newDb); showMsg("✓ 反映しました");
+  };
+
   const addNew = () => setEditRow({
     id:Math.random().toString(36).slice(2),
     date:"",youbi:"",startTime:"",endTime:"",genba:"",
@@ -1653,6 +1735,7 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
           onSave={saveRow}
           onDelete={editRow.addedBy===user.name ? deleteRow : null}
           onClose={()=>setEditRow(null)}
+          allRows={_allRowsForAke} onSyncGenba={syncGenba}
           extraCoworkers={db.extraCoworkers||[]} onUpdateExtraCoworkers={list=>{const nd={...db,extraCoworkers:list};setDb(nd);lsSave(nd);}}/>
       )}
 
@@ -2388,7 +2471,7 @@ ${pdfCols.ake?`<td></td>`:""}
         </div>
       )}
 
-      {editRow&&<EditModal row={editRow} role="admin" sections={sections} prices={db.prices||{}} onSave={saveRow} onDelete={deleteRow} onDuplicate={duplicateRow} onClose={()=>setEditRow(null)} extraCoworkers={db.extraCoworkers||[]} onUpdateExtraCoworkers={list=>{const nd={...db,extraCoworkers:list};setDb(nd);lsSave(nd);}}/>}
+      {editRow&&<EditModal row={editRow} role="admin" sections={sections} prices={db.prices||{}} onSave={saveRow} onDelete={deleteRow} onDuplicate={duplicateRow} onClose={()=>setEditRow(null)} allRows={allRows} onSyncGenba={(syncData,rowIds)=>{const nr={...db.rows};for(const w of Object.keys(nr)){nr[w]=nr[w].map(r=>rowIds.includes(r.id)?{...r,...syncData}:r);}const nd={...db,rows:nr};setDb(nd);lsSave(nd);showMsg("✓ 反映しました");}} extraCoworkers={db.extraCoworkers||[]} onUpdateExtraCoworkers={list=>{const nd={...db,extraCoworkers:list};setDb(nd);lsSave(nd);}}/>}
 
       <div style={{background:"#0d1520",borderBottom:"1px solid #1a2634",padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{color:"#4fc3f7",fontSize:17,fontWeight:900}}>現場日報</span>

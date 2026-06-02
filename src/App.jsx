@@ -1200,27 +1200,27 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
             ✏️ 投稿する
           </button>
         )}
-        {/* 技術資料・ベスト日報（ホームのみ表示） */}
-        {currentId === null && (<>
-          <div style={{padding:"8px 10px",background:"#080e14",borderRadius:7,border:"1px solid #1a2634"}}>
-            <div style={{color:"#546e7a",fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:6}}>📚 技術資料</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <button onClick={()=>setToolView('manual')}
-                style={{padding:"6px 14px",borderRadius:6,border:"1px solid #1e4a5a",background:"#0d2030",color:"#4fc3f7",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                📘 業務マニュアル
-              </button>
-              <button onClick={()=>setToolView('osd')}
-                style={{padding:"6px 14px",borderRadius:6,border:"1px solid #2a2000",background:"#1a1400",color:"#ffd54f",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                📋 OSD調査票
-              </button>
-            </div>
-          </div>
+        {/* ベスト日報（ホームのみ表示） */}
+        {currentId === null && (
           <div onClick={()=>setShowBestReport(true)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#080e14",borderRadius:7,border:"1px solid #3a2a00",cursor:"pointer"}}>
             <span style={{fontSize:18}}>🏆</span>
             <div style={{color:"#ffd54f",fontSize:13,fontWeight:700}}>ベスト日報</div>
           </div>
-        </>)}
+        )}
+        {/* 技術資料フォルダの中にマニュアル・OSDボタンを表示 */}
+        {currentFolder?.name === "技術資料" && (
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",paddingBottom:4}}>
+            <button onClick={()=>setToolView('manual')}
+              style={{padding:"8px 16px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",color:"#4fc3f7",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
+              📘 業務マニュアル
+            </button>
+            <button onClick={()=>setToolView('osd')}
+              style={{padding:"8px 16px",borderRadius:7,border:"1px solid #2a2000",background:"#1a1400",color:"#ffd54f",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
+              📋 OSD調査票
+            </button>
+          </div>
+        )}
         {childFolders.map(f=>(
           <div key={f.id} onClick={()=>goFolder(f.id)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#080e14",borderRadius:7,border:"1px solid #1a2634",cursor:"pointer"}}>

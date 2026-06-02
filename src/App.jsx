@@ -3303,6 +3303,14 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                   <div style={{color:"#1e2d3d",fontSize:11}}>台数データなし</div>
                 )}
 
+                {/* 予定金額 */}
+                {g.row.yotei&&(
+                  <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{color:"#546e7a",fontSize:10}}>予定金額</span>
+                    <span style={{color:"#81d4fa",fontWeight:700,fontSize:13}}>¥{Number(g.row.yotei).toLocaleString()}</span>
+                  </div>
+                )}
+
                 {/* 点検金額 */}
                 {(g.bokaAmt>0||g.sogoAmt>0||g.teikiAmt>0)&&(
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>

@@ -1215,10 +1215,6 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
               style={{padding:"8px 16px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",color:"#4fc3f7",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
               📘 業務マニュアル
             </button>
-            <button onClick={()=>setToolView('osd')}
-              style={{padding:"8px 16px",borderRadius:7,border:"1px solid #2a2000",background:"#1a1400",color:"#ffd54f",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
-              📋 OSD調査票
-            </button>
           </div>
         )}
         {childFolders.map(f=>(

@@ -769,7 +769,13 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                           <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
                               display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                             <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>📋 管理費</span>
-                            <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBokaKanrihi(form).toLocaleString()}</span>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBokaKanrihi(form).toLocaleString()}</span>
+                              {calcBokaKanrihi(form)>0&&<button onClick={()=>set("yotei",String((parseInt(form.yotei)||0)+calcBokaKanrihi(form)))}
+                                style={{padding:"4px 10px",borderRadius:6,border:"1px solid #ffd54f",background:"transparent",color:"#ffd54f",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                                予定金額に足す
+                              </button>}
+                            </div>
                           </div>
                         </>
                       )}

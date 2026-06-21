@@ -791,7 +791,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
 
                   {/* 割合計算 */}
                   {(()=>{
-                    const total=(calcBoka(form,calcMult,prices||{}))+(calcBokaKanrihi(form))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
+                    const total=(calcBoka(form,calcMult,prices||{}))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
                     if(total===0)return null;
                     const n7=parseInt(count7)||0;
                     const n3=parseInt(count3)||0;

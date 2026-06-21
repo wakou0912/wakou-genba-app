@@ -807,12 +807,20 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                             <input type="text" inputMode="numeric" value={count7} onChange={e=>set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
+                            {amt7>0&&<button onClick={()=>set("yotei",String(amt7))}
+                              style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                              予定金額に反映
+                            </button>}
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>3割</span>
                             <input type="text" inputMode="numeric" value={count3} onChange={e=>set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
+                            {amt3>0&&<button onClick={()=>set("yotei",String(amt3))}
+                              style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                              予定金額に反映
+                            </button>}
                           </div>
                           {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
                         </div>

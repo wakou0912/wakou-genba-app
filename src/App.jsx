@@ -70,6 +70,11 @@ const TEIKI_ADDON_KEYS = new Set(['teiki_m_0_2','teiki_m_2_2','teiki_m_2_3','tei
 function getBokaCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:n<=30?5:6;}
 function getTeikiCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:5;}
 function applyMult(v,m){const r=m==="夜間"?1.25:m==="日祝"?1.35:m==="日祝夜間"?1.6:1; return Math.ceil(v*r/10)*10;}
+function calcBokaKanrihi(form){
+  const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
+  const sE=+form.bokaShutterElec||0,sM=+form.bokaShutterManual||0;
+  return (sE+sM)*600+(dO+dC)*200;
+}
 function calcBoka(form,mult,P={}){
   const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
   const sE=+form.bokaShutterElec||0,sM=+form.bokaShutterManual||0;
@@ -83,7 +88,7 @@ function calcBoka(form,mult,P={}){
   let sub=dO*dop[col]+dC*dcp[col]+sE*sep[col]+sM*smp[col]+pl*(P.boka_postless||1000)+ms*(P.boka_maxspace||500)+bt*(P.boka_battery||520);
   extras.forEach(it=>{sub+=(+form[`bokaExtra_${it.id}`]||0)*(it.prices[col]||0);});
   fixedExtras.forEach(it=>{sub+=(+form[`bokaFixed_${it.id}`]||0)*(it.value||0);});
-  return applyMult(sub,mult)+(sE+sM)*600+(dO+dC)*200;
+  return applyMult(sub,mult);
 }
 function calcSogo(form,mult,P={}){
   const dO=+form.sogodoorAnytime||0,dC=+form.sogodoorAlwaysClose||0;
@@ -755,11 +760,18 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
                       {(form.inspectionTypes||[]).includes("防火設備点検")&&(
-                        <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
-                            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>🧮 防火設備点検</span>
-                          <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBoka(form,calcMult,prices||{}).toLocaleString()}</span>
-                        </div>
+                        <>
+                          <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
+                              display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>🧮 防火設備点検</span>
+                            <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBoka(form,calcMult,prices||{}).toLocaleString()}</span>
+                          </div>
+                          <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
+                              display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>📋 管理費</span>
+                            <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBokaKanrihi(form).toLocaleString()}</span>
+                          </div>
+                        </>
                       )}
                       {(form.inspectionTypes||[]).includes("総合点検")&&(
                         <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
@@ -779,7 +791,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
 
                   {/* 割合計算 */}
                   {(()=>{
-                    const total=(calcBoka(form,calcMult,prices||{}))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
+                    const total=(calcBoka(form,calcMult,prices||{}))+(calcBokaKanrihi(form))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
                     if(total===0)return null;
                     const n7=parseInt(count7)||0;
                     const n3=parseInt(count3)||0;
@@ -3157,7 +3169,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
     }
     const kubun = getKubun(r.date, r.startTime);
     const mult = kubun?.label || "なし";
-    const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices) : 0;
+    const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices)+calcBokaKanrihi(r) : 0;
     const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
     const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
     return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, row:r};

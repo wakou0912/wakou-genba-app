@@ -282,6 +282,10 @@ function lsSave(data) {
 }
 
 // ─── ANDPAD パーサー ─────────────────────────────────
+// ANDPAD側で案件名に付く「【EDI送付済】」「[済]」等の状態タグを除去して現場名を統一する
+function normalizeGenbaName(name) {
+  return String(name||"").replace(/[【\[][^】\]]*[】\]]/g,"").replace(/\s+/g," ").trim();
+}
 function parseAndpad(file) {
   return new Promise((res,rej)=>{
     const reader=new FileReader();
@@ -314,7 +318,7 @@ function parseAndpad(file) {
             for(const [ci_s,ds] of Object.entries(dateCols)){
               const ci=parseInt(ci_s);
               const gv=lbl=>{if(block[lbl]===undefined)return "";const v=raw[block[lbl]][ci];return String(v||"").trim();};
-              const genba=gv("案件名"),jikan=gv("時間"),eigyo=gv("営業担当"),soka=gv("所課");
+              const genba=normalizeGenbaName(gv("案件名")),jikan=gv("時間"),eigyo=gv("営業担当"),soka=gv("所課");
               if(!genba||genba==="nan")continue;
               let st="";
               if(jikan&&jikan!=="時刻未定"){const m=jikan.split("-")[0].trim().match(/^(\d+):(\d+)/);if(m){let h=parseInt(m[1]);if(h>=24)h-=24;st=`${String(h).padStart(2,"0")}:${m[2]}`;}}

@@ -2267,6 +2267,86 @@ function AdminView({db, setDb, onLogout}) {
     );
   };
 
+  // 一覧タブ・フィルタータブ共通の現場カード（表示項目のズレを防ぐため一本化）
+  const RowCard = ({r, selectable}) => {
+    const isSonotaCard = r.worker==="その他";
+    const SUBJECT_PRIORITY = ["ワコウ","施工管理","点検","工事","調査","その他"];
+    const mainSubject = SUBJECT_PRIORITY.find(p=>(r.subjects||[]).includes(p)) || (r.subjects||[])[0];
+    const sc = isSonotaCard ? SONOTA_CARD : (SUBJECT_COLORS[mainSubject]||{color:"#546e7a",bg:"#0d1520",border:"#1a2634"});
+    const d = parseDate(r.date);
+    return (
+      <div style={{background:sc.bg,borderRadius:8,border:`2px solid ${selectable&&selectedRows.has(r.id)?"#ce93d8":sc.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:isSonotaCard?"0 0 12px #7b1fa240":"none",opacity:r.billingStatus==="請求書"?0.4:1}}>
+        {selectable&&<input type="checkbox" checked={selectedRows.has(r.id)} onChange={()=>toggleRowSelect(r.id)}
+          style={{accentColor:"#ce93d8",width:16,height:16,flexShrink:0,cursor:"pointer"}}/>}
+        {/* 日付 */}
+        <div style={{minWidth:72,background:"rgba(0,0,0,0.25)",borderRadius:7,padding:"6px 8px",textAlign:"center"}}>
+          <div style={{color:sc.light||"#90a4ae",fontSize:20,fontWeight:900,lineHeight:1}}>{d?String(d.getDate()).padStart(2,"0"):"—"}</div>
+          <div style={{color:sc.light||"#78909c",fontSize:10,fontWeight:700,marginTop:1}}>{d?`${d.getMonth()+1}月`:""}</div>
+          <div style={{color:"#546e7a",fontSize:9}}>{d?DOW_JP[d.getDay()]:""}</div>
+          {(r.startTime||r.endTime)&&(
+            <div style={{color:"#546e7a",fontSize:9,marginTop:1}}>
+              {r.startTime||"—"}{r.endTime&&` 〜 ${r.endTime}`}
+            </div>
+          )}
+          <div style={{marginTop:3}}><KubunBadge date={r.date} time={r.startTime}/></div>
+        </div>
+        <div style={{flex:1,minWidth:120}}>
+          <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:3}}>{r.genba}</div>
+          <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:2}}>
+            {r.worker}{(r.coworkers||[]).length>0&&<span style={{color:"#546e7a",fontWeight:400}}> ／ {(r.coworkers||[]).join("・")}</span>}
+          </div>
+          {(r.subjects||[]).length>0&&(
+            <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:3}}>
+              {(r.subjects||[]).map(s=>{const c=SUBJECT_COLORS[s]||{};return <span key={s} style={{background:c.bg||"#1a2634",color:c.light||"#78909c",border:`1px solid ${c.border||"#1a2634"}`,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>{s}</span>;})}
+              {(r.inspectionTypes||[]).length>0&&(r.subjects||[]).includes("点検")&&(
+                <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                  {(r.inspectionTypes||[]).map(t=>(
+                    <span key={t} style={{background:"#052e16",color:"#86efac",border:"1px solid #14532d",borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+                      📋 {t}
+                      {t==="防火設備点検"&&(r.doorAlwaysClose||r.doorAnytime)&&(
+                        <span style={{marginLeft:3,fontSize:9}}>
+                          {r.doorAlwaysClose?"常閉"+r.doorAlwaysClose+"台":""}
+                          {r.doorAlwaysClose&&r.doorAnytime?" / ":""}
+                          {r.doorAnytime?"随時"+r.doorAnytime+"台":""}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div style={{color:"#546e7a",fontSize:10}}>{(r.eigyoList||[]).join("・")||""}</div>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          {r.yotei&&<span style={{color:"#81d4fa",fontSize:11}}>予定¥{Number(r.yotei).toLocaleString()}</span>}
+          {r.edi&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:11}}>請求¥{Number(r.edi).toLocaleString()}</span>}
+          {r.ake&&<span style={{background:"#0a1a2a",color:"#81d4fa",border:"1px solid #1e4a5a",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700}}>🌙 明け</span>}
+          <span style={{color:r.reportStatus==="実施済"?"#66bb6a":"#ef5350",fontWeight:700,fontSize:11}}>{r.reportStatus==="実施済"?"🟢":"🔴"} {r.reportStatus}</span>
+          {(r.expressGo||r.expressReturn||r.expressMid)&&(
+            <div style={{display:"flex",gap:3}}>
+              {r.expressGo&&<span style={{background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>🚗行き</span>}
+              {r.expressReturn&&<span style={{background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>🏠帰り</span>}
+            </div>
+          )}
+          {(r.subjects||[]).includes("施工管理")&&(()=>{
+            const pb=REPORT_STATUS.find(x=>x.value===r.photoBookStatus)||REPORT_STATUS[0];
+            return <span style={{background:pb.bg,color:pb.color,border:`1px solid ${pb.color}50`,borderRadius:5,padding:"2px 8px",fontWeight:700,fontSize:11}}>📷 写真帳 {pb.value==="実施済"?"🟢":"🔴"}</span>;
+          })()}
+          <BillingBadge value={r.billingStatus} editable onClick={()=>cycleBilling(r)}/>
+          <BestAddBtn row={r}/>
+          <button onClick={()=>setEditRow(r)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 12px"}}>編集</button>
+        </div>
+        {r.memo&&(
+          <div style={{width:"100%",marginTop:4,padding:"6px 10px",background:"rgba(0,0,0,0.25)",borderRadius:6,borderLeft:"2px solid #546e7a"}}>
+            <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:2}}>メモ</div>
+            <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{r.memo}</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const handleReorder = newRows => {
     // displayRowsを並び替えた場合、元のdb.rowsに反映
     const newDbRows={...db.rows};
@@ -2694,85 +2774,7 @@ ${pdfCols.ake?`<td></td>`:""}
                     </span>
                   ))}
                 </div>
-                <DraggableList rows={dr} onReorder={handleReorder} renderCard={r=>{
-            const k=getKubun(r.date,r.startTime);
-            const isSonotaCard = r.worker==="その他";
-            const SUBJECT_PRIORITY = ['ワコウ', '施工管理', '点検', '工事', '調査', 'その他'];
-            const mainSubject = SUBJECT_PRIORITY.find(p=>(r.subjects||[]).includes(p)) || (r.subjects||[])[0];
-            const sc = isSonotaCard ? SONOTA_CARD : (SUBJECT_COLORS[mainSubject]||{color:"#546e7a",bg:"#0d1520",border:"#1a2634"});
-            const d=parseDate(r.date);
-            return(
-              <div style={{background:sc.bg,borderRadius:8,border:`2px solid ${selectedRows.has(r.id)?"#ce93d8":sc.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",boxShadow:isSonotaCard?"0 0 12px #7b1fa240":"none",opacity:r.billingStatus==="請求書"?0.4:1}}>
-                <input type="checkbox" checked={selectedRows.has(r.id)} onChange={()=>toggleRowSelect(r.id)}
-                  style={{accentColor:"#ce93d8",width:16,height:16,flexShrink:0,cursor:"pointer"}}/>
-                {/* 日付 */}
-                <div style={{minWidth:72,background:"rgba(0,0,0,0.25)",borderRadius:7,padding:"6px 8px",textAlign:"center"}}>
-                  <div style={{color:sc.light||"#90a4ae",fontSize:20,fontWeight:900,lineHeight:1}}>{d?String(d.getDate()).padStart(2,"0"):"—"}</div>
-                  <div style={{color:sc.light||"#78909c",fontSize:10,fontWeight:700,marginTop:1}}>{d?`${d.getMonth()+1}月`:""}</div>
-                  <div style={{color:"#546e7a",fontSize:9}}>{d?DOW_JP[d.getDay()]:""}</div>
-                  {(r.startTime||r.endTime)&&(
-                    <div style={{color:"#546e7a",fontSize:9,marginTop:1}}>
-                      {r.startTime||"—"}{r.endTime&&` 〜 ${r.endTime}`}
-                    </div>
-                  )}
-                  <div style={{marginTop:3}}><KubunBadge date={r.date} time={r.startTime}/></div>
-                </div>
-                <div style={{flex:1,minWidth:120}}>
-                  <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:3}}>{r.genba}</div>
-                  <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:2}}>
-                    {r.worker}{(r.coworkers||[]).length>0&&<span style={{color:"#546e7a",fontWeight:400}}> ／ {(r.coworkers||[]).join("・")}</span>}
-                  </div>
-                  {(r.subjects||[]).length>0&&(
-                    <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:3}}>
-                      {(r.subjects||[]).map(s=>{const c=SUBJECT_COLORS[s]||{};return <span key={s} style={{background:c.bg||"#1a2634",color:c.light||"#78909c",border:`1px solid ${c.border||"#1a2634"}`,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>{s}</span>;})}
-                      {(r.inspectionTypes||[]).length>0&&(r.subjects||[]).includes("点検")&&(
-                        <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
-                          {(r.inspectionTypes||[]).map(t=>(
-                            <span key={t} style={{background:"#052e16",color:"#86efac",border:"1px solid #14532d",borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                              📋 {t}
-                              {t==="防火設備点検"&&(r.doorAlwaysClose||r.doorAnytime)&&(
-                                <span style={{marginLeft:3,fontSize:9}}>
-                                  {r.doorAlwaysClose?"常閉"+r.doorAlwaysClose+"台":""}
-                                  {r.doorAlwaysClose&&r.doorAnytime?" / ":""}
-                                  {r.doorAnytime?"随時"+r.doorAnytime+"台":""}
-                                </span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div style={{color:"#546e7a",fontSize:10}}>{(r.eigyoList||[]).join("・")||""}</div>
-                </div>
-                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                  {r.yotei&&<span style={{color:"#81d4fa",fontSize:11}}>予定¥{Number(r.yotei).toLocaleString()}</span>}
-                  {r.edi&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:11}}>予定¥{Number(r.edi).toLocaleString()}</span>}
-                  {r.ake&&<span style={{background:"#0a1a2a",color:"#81d4fa",border:"1px solid #1e4a5a",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700}}>🌙 明け</span>}
-                  <span style={{color:r.reportStatus==="実施済"?"#66bb6a":"#ef5350",fontWeight:700,fontSize:11}}>{r.reportStatus==="実施済"?"🟢":"🔴"} {r.reportStatus}</span>
-                  {(r.expressGo||r.expressReturn||r.expressMid)&&(
-                    <div style={{display:"flex",gap:3}}>
-                      {r.expressGo&&<span style={{background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>🚗行き</span>}
-                      {r.expressReturn&&<span style={{background:"#0d2030",color:"#4fc3f7",border:"1px solid #1e4a5a",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>🏠帰り</span>}
-                    </div>
-                  )}
-                  {(r.subjects||[]).includes("施工管理")&&(()=>{
-                    const pb=REPORT_STATUS.find(x=>x.value===r.photoBookStatus)||REPORT_STATUS[0];
-                    return <span style={{background:pb.bg,color:pb.color,border:`1px solid ${pb.color}50`,borderRadius:5,padding:"2px 8px",fontWeight:700,fontSize:11}}>📷 写真帳 {pb.value==="実施済"?"🟢":"🔴"}</span>;
-                  })()}
-                  <BillingBadge value={r.billingStatus} editable onClick={()=>cycleBilling(r)}/>
-                  <BestAddBtn row={r}/>
-                  <button onClick={()=>setEditRow(r)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 12px"}}>編集</button>
-                </div>
-                {r.memo&&(
-                  <div style={{width:"100%",marginTop:4,padding:"6px 10px",background:"rgba(0,0,0,0.25)",borderRadius:6,borderLeft:"2px solid #546e7a"}}>
-                    <div style={{color:"#37474f",fontSize:9,fontWeight:700,marginBottom:2}}>メモ</div>
-                    <div style={{color:"#90a4ae",fontSize:11,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{r.memo}</div>
-                  </div>
-                )}
-              </div>
-            );
-          }}/></div>);});})()}
+                <DraggableList rows={dr} onReorder={handleReorder} renderCard={r=><RowCard r={r} selectable/>}/></div>);});})()}
           {displayRows.length>0&&(
             <div style={{marginTop:10,padding:"8px 12px",background:"#0d1520",borderRadius:6,border:"1px solid #1a2634",fontSize:10,color:"#263238",display:"flex",justifyContent:"space-between"}}>
               <span>☰ ドラッグで同じ日付内の順番を変更 ／ 請求ステータスはクリックで切り替え（⚪→🟡→🔴）</span>
@@ -2896,49 +2898,7 @@ ${pdfCols.ake?`<td></td>`:""}
           {/* 結果一覧 */}
           {filterTabRows.length===0
             ? <div style={{textAlign:"center",padding:48,color:"#1a2634"}}>条件に合うデータがありません</div>
-            : <DraggableList rows={filterTabRows} onReorder={()=>{}} renderCard={r=>{
-                const SUBJECT_PRIORITY = ["ワコウ","施工管理","点検","工事","調査","その他"];
-                const isSonotaCard = r.worker==="その他";
-                const mainSubject = SUBJECT_PRIORITY.find(p=>(r.subjects||[]).includes(p)) || (r.subjects||[])[0];
-                const sc = isSonotaCard ? SONOTA_CARD : (SUBJECT_COLORS[mainSubject]||{color:"#546e7a",bg:"#0d1520",border:"#1a2634"});
-                const d = parseDate(r.date);
-                return(
-                  <div style={{background:sc.bg,borderRadius:8,border:`2px solid ${sc.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <div style={{minWidth:72,background:"rgba(0,0,0,0.25)",borderRadius:7,padding:"6px 8px",textAlign:"center"}}>
-                      <div style={{color:sc.light||"#90a4ae",fontSize:20,fontWeight:900,lineHeight:1}}>{d?String(d.getDate()).padStart(2,"0"):"—"}</div>
-                      <div style={{color:sc.light||"#78909c",fontSize:10,fontWeight:700,marginTop:1}}>{d?`${d.getMonth()+1}月`:""}</div>
-                      <div style={{color:"#546e7a",fontSize:9}}>{d?DOW_JP[d.getDay()]:""}</div>
-                      {(r.startTime||r.endTime)&&(
-                        <div style={{color:"#546e7a",fontSize:9,marginTop:1}}>
-                          {r.startTime||"—"}{r.endTime&&` 〜 ${r.endTime}`}
-                        </div>
-                      )}
-                      <div style={{marginTop:3}}><KubunBadge date={r.date} time={r.startTime}/></div>
-                    </div>
-                    <div style={{flex:1,minWidth:120}}>
-                      <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:3}}>{r.genba}</div>
-                      <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:2}}>
-                        {r.worker}{(r.coworkers||[]).length>0&&<span style={{color:"#546e7a",fontWeight:400}}> ／ {(r.coworkers||[]).join("・")}</span>}
-                      </div>
-                      {(r.subjects||[]).length>0&&(
-                        <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:3}}>
-                          {(r.subjects||[]).map(s=>{const c=SUBJECT_COLORS[s]||{};return <span key={s} style={{background:c.bg||"#1a2634",color:c.light||"#78909c",border:`1px solid ${c.border||"#1a2634"}`,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>{s}</span>;})}
-                        </div>
-                      )}
-                      <div style={{color:"#546e7a",fontSize:10}}>{(r.eigyoList||[]).join("・")||""}</div>
-                    </div>
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                      {r.yotei&&<span style={{color:"#81d4fa",fontSize:11}}>予定¥{Number(r.yotei).toLocaleString()}</span>}
-                      {r.edi&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:11}}>請求¥{Number(r.edi).toLocaleString()}</span>}
-                      {r.ake&&<span style={{background:"#0a1a2a",color:"#81d4fa",border:"1px solid #1e4a5a",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700}}>🌙 明け</span>}
-                      <span style={{color:r.reportStatus==="実施済"?"#66bb6a":"#ef5350",fontWeight:700,fontSize:11}}>{r.reportStatus==="実施済"?"🟢":"🔴"} {r.reportStatus}</span>
-                      <BillingBadge value={r.billingStatus} editable onClick={()=>cycleBilling(r)}/>
-                      <BestAddBtn row={r}/>
-                      <button onClick={()=>setEditRow(r)} style={{...btnBase,background:"rgba(0,0,0,0.3)",color:"#4fc3f7",border:"1px solid #1e4a5a",fontSize:11,padding:"5px 10px"}}>編集</button>
-                    </div>
-                  </div>
-                );
-              }}/>
+            : <DraggableList rows={filterTabRows} onReorder={()=>{}} renderCard={r=><RowCard r={r}/>}/>
           }
         </div>
       )}

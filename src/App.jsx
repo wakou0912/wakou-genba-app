@@ -2908,7 +2908,12 @@ ${pdfCols.ake?`<td></td>`:""}
                       <div style={{color:sc.light||"#90a4ae",fontSize:20,fontWeight:900,lineHeight:1}}>{d?String(d.getDate()).padStart(2,"0"):"—"}</div>
                       <div style={{color:sc.light||"#78909c",fontSize:10,fontWeight:700,marginTop:1}}>{d?`${d.getMonth()+1}月`:""}</div>
                       <div style={{color:"#546e7a",fontSize:9}}>{d?DOW_JP[d.getDay()]:""}</div>
-                      <KubunBadge date={r.date} time={r.startTime}/>
+                      {(r.startTime||r.endTime)&&(
+                        <div style={{color:"#546e7a",fontSize:9,marginTop:1}}>
+                          {r.startTime||"—"}{r.endTime&&` 〜 ${r.endTime}`}
+                        </div>
+                      )}
+                      <div style={{marginTop:3}}><KubunBadge date={r.date} time={r.startTime}/></div>
                     </div>
                     <div style={{flex:1,minWidth:120}}>
                       <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:3}}>{r.genba}</div>

@@ -815,7 +815,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                         <div style={{display:"flex",flexDirection:"column",gap:8}}>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>7割</span>
-                            <input type="number" inputMode="numeric" value={count7} onChange={e=>set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                            <input type="text" inputMode="numeric" value={count7} onChange={e=>{if(!e.nativeEvent.isComposing)set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
                             {amt7>0&&<button onClick={()=>set("yotei",String(amt7))}
@@ -825,7 +825,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>3割</span>
-                            <input type="number" inputMode="numeric" value={count3} onChange={e=>set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                            <input type="text" inputMode="numeric" value={count3} onChange={e=>{if(!e.nativeEvent.isComposing)set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                             <span style={{color:"#546e7a",fontSize:12}}>人</span>
                             {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
                             {amt3>0&&<button onClick={()=>set("yotei",String(amt3))}
@@ -904,7 +904,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
 
           {/* 予定金額 */}
           <Field label="予定金額">
-            <input type="number" inputMode="numeric" value={form.yotei||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:160}} placeholder="0"/>
+            <input type="text" inputMode="numeric" value={form.yotei||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("yotei",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:160}} placeholder="0"/>
           </Field>
 
           {/* 報告ステータス：その他は非表示 */}
@@ -974,7 +974,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                 </div>
               </Field>
               <Field label="請求金額">
-                <input type="number" inputMode="numeric" value={form.edi||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:180}} placeholder="0"/>
+                <input type="text" inputMode="numeric" value={form.edi||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:180}} placeholder="0"/>
               </Field>
               <Field label="明け">
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -2962,8 +2962,14 @@ ${pdfCols.ake?`<td></td>`:""}
               return(
                 <div key={w} style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{color:"#cfd8dc",fontSize:13,minWidth:80}}>{w}</span>
-                  <input type="number" inputMode="numeric" value={val}
+                  <input type="text" inputMode="numeric" value={val}
                     onChange={e=>{
+                      if(e.nativeEvent.isComposing)return;
+                      const v=e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                      const nd={...db,workerTargets:{...(db.workerTargets||{}),[w]:v}};
+                      setDb(nd); lsSave(nd);
+                    }}
+                    onCompositionEnd={e=>{
                       const v=e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
                       const nd={...db,workerTargets:{...(db.workerTargets||{}),[w]:v}};
                       setDb(nd); lsSave(nd);

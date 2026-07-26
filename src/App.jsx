@@ -2906,7 +2906,9 @@ ${pdfCols.ake?`<td></td>`:""}
                     </div>
                     <div style={{flex:1,minWidth:120}}>
                       <div style={{color:"#fff",fontWeight:800,fontSize:13,marginBottom:3}}>{r.genba}</div>
-                      <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:2}}>{r.worker}</div>
+                      <div style={{color:"#4fc3f7",fontSize:11,fontWeight:600,marginBottom:2}}>
+                        {r.worker}{(r.coworkers||[]).length>0&&<span style={{color:"#546e7a",fontWeight:400}}> ／ {(r.coworkers||[]).join("・")}</span>}
+                      </div>
                       {(r.subjects||[]).length>0&&(
                         <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:3}}>
                           {(r.subjects||[]).map(s=>{const c=SUBJECT_COLORS[s]||{};return <span key={s} style={{background:c.bg||"#1a2634",color:c.light||"#78909c",border:`1px solid ${c.border||"#1a2634"}`,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>{s}</span>;})}

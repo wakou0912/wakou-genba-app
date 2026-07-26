@@ -974,7 +974,13 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                 </div>
               </Field>
               <Field label="請求金額">
-                <input type="text" inputMode="numeric" value={form.edi||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:180}} placeholder="0"/>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <input type="text" inputMode="numeric" value={form.edi||""} onChange={e=>{if(!e.nativeEvent.isComposing)set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("edi",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} style={{...mi,width:180}} placeholder="0"/>
+                  {(parseInt(form.yotei)||0)>0&&<button onClick={()=>set("edi",String(parseInt(form.yotei)||0))}
+                    style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                    予定金額を反映
+                  </button>}
+                </div>
               </Field>
               <Field label="明け">
                 <div style={{display:"flex",alignItems:"center",gap:10}}>

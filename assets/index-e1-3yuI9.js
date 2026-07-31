@@ -322,6 +322,7 @@ Content-Type: `+l.contentType+`\r
       <td style="text-align:center;">${hF(e.unit||``)}</td>
     </tr>`).join(``);return`
     <div class="instruction-page">
+      ${BP.logoDataUrl?`<img class="doc-logo" src="${BP.logoDataUrl}" alt="ロゴ">`:``}
       <div class="inst-title">指　示　書</div>
       <table class="inst-header">
         <tr><th>現場名</th><td>${hF(e.siteName)}</td><th>取引先</th><td>${hF(e.customerName)}</td></tr>

@@ -492,6 +492,7 @@ function buildInstructionPage(project, quote, showPageHead) {
 
   return `
     <div class="instruction-page">
+      ${COMPANY_INFO.logoDataUrl ? `<img class="doc-logo" src="${COMPANY_INFO.logoDataUrl}" alt="ロゴ">` : ""}
       <div class="inst-title">指　示　書</div>
       <table class="inst-header">
         <tr><th>現場名</th><td>${escapeHtml(project.siteName)}</td><th>取引先</th><td>${escapeHtml(project.customerName)}</td></tr>

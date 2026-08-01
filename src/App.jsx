@@ -3368,7 +3368,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
     const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices)+calcBokaKanrihi(r) : 0;
     const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
     const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
-    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, extraTotal:calcExtraTotal(r), row:r};
+    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, extraTotal:calcExtraTotal(r), sonotaTotal:calcSonotaTotal(r), row:r};
   }).sort((a,b)=>{
     if(a.dates[0]>b.dates[0])return 1;
     if(a.dates[0]<b.dates[0])return -1;
@@ -3388,7 +3388,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
       const dowStr = g.dates[0]?DOW_JP_S[new Date(g.dates[0]+"T00:00:00").getDay()]:"";
       const kubunStr = g.kubun?.label||"";
       const inspAmount = g.bokaAmt+g.sogoAmt+g.teikiAmt;
-      const amount = inspAmount+g.extraTotal;
+      const amount = inspAmount+g.extraTotal+g.sonotaTotal;
       const {ownTotal}=calcOwnOtherSplit(workerRow,inspAmount);
       grandTotal+=amount; grandOwnTotal+=ownTotal;
       const extraHtml = (workerRow?.extraCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
@@ -3396,7 +3396,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
       const sonotaHtml = (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
         `<div style="font-size:11px;color:#8d6e63;margin-bottom:2px">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
       const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
-      const amountHtml = amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>${formulaHtml}${extraHtml}${sonotaHtml}<div style="margin-bottom:4px"></div>`:"";
+      const amountHtml = (amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>${formulaHtml}${extraHtml}`:"")+sonotaHtml+`<div style="margin-bottom:4px"></div>`;
       const teikiHtml = Object.keys(g.teikiData).length>0
         ? `<h3 class="teiki">定期点検</h3><table><thead><tr><th>種別</th><th style="text-align:right">台数</th></tr></thead><tbody>
            ${Object.entries(g.teikiData).map(([l,c])=>`<tr><td>${l}</td><td style="text-align:right;font-weight:bold">${c}台</td></tr>`).join("")}
@@ -3450,7 +3450,7 @@ ${allHtml}</body></html>`;
     const DOW_JP_S = ["日","月","火","水","木","金","土"];
     const dowStr = g.dates[0] ? DOW_JP_S[new Date(g.dates[0]+"T00:00:00").getDay()] : "";
     const inspAmount = g.bokaAmt+g.sogoAmt+g.teikiAmt;
-    const amount = inspAmount+g.extraTotal;
+    const amount = inspAmount+g.extraTotal+g.sonotaTotal;
     const {ownTotal}=calcOwnOtherSplit(workerRow,inspAmount);
     const extraHtml = (workerRow?.extraCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
       `<div class="meta">＋ ${e.label||"追加"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("")
@@ -3589,7 +3589,7 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                 )}
 
                 {/* 点検金額 */}
-                {(g.bokaAmt>0||g.sogoAmt>0||g.teikiAmt>0)&&(
+                {(g.bokaAmt>0||g.sogoAmt>0||g.teikiAmt>0||g.extraTotal>0||g.sonotaTotal>0)&&(
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
                     {g.bokaAmt>0&&(
                       <div style={{background:"#1a0f00",borderRadius:6,padding:"5px 12px",border:"1px solid #f9a82540"}}>
@@ -3615,12 +3615,25 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                         <div style={{color:"#ffb74d",fontWeight:900,fontSize:14}}>¥{g.extraTotal.toLocaleString()}</div>
                       </div>
                     )}
-                    {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal)>0&&(g.bokaAmt>0)+(g.sogoAmt>0)+(g.teikiAmt>0)+(g.extraTotal>0)>1&&(
+                    {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal+g.sonotaTotal)>0&&(g.bokaAmt>0)+(g.sogoAmt>0)+(g.teikiAmt>0)+(g.extraTotal>0)+(g.sonotaTotal>0)>1&&(
                       <div style={{background:"#0d1520",borderRadius:6,padding:"5px 12px",border:"1px solid #37474f"}}>
-                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>合計</div>
-                        <div style={{color:"#fff",fontWeight:900,fontSize:14}}>¥{(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal).toLocaleString()}</div>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>合計（別途金額含む）</div>
+                        <div style={{color:"#fff",fontWeight:900,fontSize:14}}>¥{(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal+g.sonotaTotal).toLocaleString()}</div>
                       </div>
                     )}
+                    {g.sonotaTotal>0&&(
+                      <div style={{background:"#1a1208",borderRadius:6,padding:"5px 12px",border:"1px solid #8d6e6360"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>別途金額（集計非反映）</div>
+                        <div style={{color:"#bcaaa4",fontWeight:900,fontSize:14}}>¥{g.sonotaTotal.toLocaleString()}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(g.row.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).length>0&&(
+                  <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:2}}>
+                    {(g.row.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>(
+                      <div key={e.id} style={{color:"#bcaaa4",fontSize:11}}>📎 {e.label||"別途"}: ¥{(parseInt(e.amount)||0).toLocaleString()}</div>
+                    ))}
                   </div>
                 )}
 

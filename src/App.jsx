@@ -1021,6 +1021,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                               {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
                             </div>
                           )}
+                          {calcSonotaTotal(form)>0&&<div style={{color:"#8d6e63",fontSize:12,fontWeight:700}}>別途金額分 ¥{calcSonotaTotal(form).toLocaleString()}</div>}
                         </div>
                       </div>
                     );
@@ -3396,7 +3397,8 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
       const sonotaHtml = (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
         `<div style="font-size:11px;color:#8d6e63;margin-bottom:2px">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
       const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
-      const amountHtml = (amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>${formulaHtml}${extraHtml}`:"")+sonotaHtml+`<div style="margin-bottom:4px"></div>`;
+      const ownLineHtml = ownTotal!==amount?`<div style="font-size:11px;color:#555;margin-bottom:6px">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:"";
+      const amountHtml = (amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}</div>${ownLineHtml}${formulaHtml}${extraHtml}`:"")+sonotaHtml+`<div style="margin-bottom:4px"></div>`;
       const teikiHtml = Object.keys(g.teikiData).length>0
         ? `<h3 class="teiki">定期点検</h3><table><thead><tr><th>種別</th><th style="text-align:right">台数</th></tr></thead><tbody>
            ${Object.entries(g.teikiData).map(([l,c])=>`<tr><td>${l}</td><td style="text-align:right;font-weight:bold">${c}台</td></tr>`).join("")}
@@ -3471,7 +3473,7 @@ h3.boka{font-size:11px;color:#e65100;margin:12px 0 5px;border-bottom:1px solid #
   <span>区分: ${kubunStr||"—"} ／ 作業員: ${g.worker.join("・")}</span>
   <span>所課: ${sectionStr} ／ 営業名: ${eigyoStr}</span>
 </div>
-${amount>0?`<div style="font-size:13px;font-weight:bold;color:#1a237e;margin:6px 0 2px;">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>`:""}
+${amount>0?`<div style="font-size:13px;font-weight:bold;color:#1a237e;margin:6px 0 2px;">金額: ¥${amount.toLocaleString()}</div>${ownTotal!==amount?`<div class="meta">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:""}`:""}
 ${formulaHtml}
 ${extraHtml}
 ${workerRow?.memo?`<div class="meta" style="margin-top:6px;padding:6px 8px;background:#f9f9f9;border-left:3px solid #ccc">📝 メモ: ${workerRow.memo}</div>`:""}
@@ -3673,6 +3675,7 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                             {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
                           </div>
                         )}
+                        {g.sonotaTotal>0&&<div style={{color:"#8d6e63",fontSize:12,fontWeight:700}}>別途金額分 ¥{g.sonotaTotal.toLocaleString()}</div>}
                         {g.worker.length>0&&(
                           <div style={{color:"#4fc3f7",fontSize:11,marginTop:2}}>{g.worker.join(" ／ ")}</div>
                         )}

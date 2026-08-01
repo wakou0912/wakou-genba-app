@@ -30,7 +30,7 @@ const EB_APP_CSS = `  .eb-root{
     --bg:#F6F4EF; --card:#FFFFFF; --line:#E4E0D6;
     --text:#25303D; --sub:#6B7480;
     --st-irai:#9AA1AA; --st-mitsumori:#2F7DC2; --st-juchu:#7A5CC7;
-    --st-seikyu:#E8622C; --st-nyukin:#2F9E6E;
+    --st-koutei:#0E9488; --st-seikyu:#E8622C; --st-nyukin:#2F9E6E;
   }
   .eb-root *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   .eb-root{margin:0;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans",sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;}
@@ -50,8 +50,8 @@ const EB_APP_CSS = `  .eb-root{
   .card-sub{font-size:12px;color:var(--sub);margin-top:2px;}
   .badge{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;color:#fff;white-space:nowrap;}
   .badge.依頼{background:var(--st-irai);} .badge.見積提出{background:var(--st-mitsumori);}
-  .badge.受注{background:var(--st-juchu);} .badge.請求{background:var(--st-seikyu);}
-  .badge.入金済{background:var(--st-nyukin);}
+  .badge.受注{background:var(--st-juchu);} .badge.工程{background:var(--st-koutei);}
+  .badge.請求{background:var(--st-seikyu);} .badge.入金済{background:var(--st-nyukin);}
   .draft-badge{display:inline-block;font-size:11.5px;font-weight:700;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:5px 10px;border-radius:6px;margin-bottom:10px;}
   .progress{display:flex;gap:3px;margin:10px 0 8px;}
   .progress span{flex:1;height:4px;border-radius:2px;background:var(--line);}
@@ -222,7 +222,8 @@ const EB_PRINT_CSS = `  .doc-page{
 /* ===================== データ層 ===================== */
 const SCHEMA_VERSION = 9;
 const TRASH_RETENTION_DAYS = 30;
-const STATUS_ORDER = ["依頼", "見積提出", "受注", "請求", "入金済"];
+const NEW_ITEM_WINDOW_DAYS = 30;
+const STATUS_ORDER = ["依頼", "見積提出", "受注", "工程", "請求", "入金済"];
 const DEFAULT_CATEGORY_NAMES = ["シャッター本体", "部材・部品", "工事・作業", "諸経費"];
 
 function uid(p) { return p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -293,6 +294,14 @@ function migrate(data) {
     if (typeof p.scheduledDate !== "string") p.scheduledDate = "";
     if (typeof p.scheduledTime !== "string") p.scheduledTime = "";
     if (typeof p.instructionMemo !== "string") p.instructionMemo = "";
+    if (!Array.isArray(p.contacts)) {
+      p.contacts = (p.siteContact || p.siteContactTel) ? [{ id: uid("contact"), name: p.siteContact || "", tel: p.siteContactTel || "" }] : [];
+    }
+    delete p.siteContact; delete p.siteContactTel;
+    if (typeof p.parkingInfo !== "string") p.parkingInfo = "";
+    if (!p.schedule || typeof p.schedule !== "object" || !Array.isArray(p.schedule.locations)) {
+      p.schedule = { startDate: "", endDate: "", handoverDate: "", workTypes: [], timePatterns: [], locations: [], cells: {} };
+    }
     if (typeof p.deletedAt === "undefined") p.deletedAt = null;
   });
   if (!Array.isArray(d.quotes)) d.quotes = [];
@@ -490,14 +499,21 @@ function buildInstructionPage(project, quote, showPageHead) {
       <td style="text-align:center;">${escapeHtml(it.unit || "")}</td>
     </tr>`).join("");
 
+  const schedule = project.schedule;
+  const hasSchedule = !!(schedule && (schedule.locations || []).length > 0 && schedule.startDate && schedule.endDate);
+  const scheduleDateLabel = hasSchedule ? `${fmtDate(schedule.startDate)} 〜 ${fmtDate(schedule.endDate)}` : (project.scheduledDate ? fmtDate(project.scheduledDate) : "（未定）");
+  const scheduleTimeLabel = hasSchedule ? "下記工程表を参照" : (project.scheduledTime || "");
+
   return `
     <div class="instruction-page">
       ${COMPANY_INFO.logoDataUrl ? `<img class="doc-logo" src="${COMPANY_INFO.logoDataUrl}" alt="ロゴ">` : ""}
       <div class="inst-title">指　示　書</div>
       <table class="inst-header">
         <tr><th>現場名</th><td>${escapeHtml(project.siteName)}</td><th>取引先</th><td>${escapeHtml(project.customerName)}</td></tr>
-        <tr><th>作業予定</th><td class="inst-blank">${project.scheduledDate ? fmtDate(project.scheduledDate) : "（未定）"}</td><th>時間</th><td class="inst-blank">${escapeHtml(project.scheduledTime || "")}</td></tr>
+        <tr><th>作業予定</th><td class="inst-blank">${scheduleDateLabel}</td><th>時間</th><td class="inst-blank">${escapeHtml(scheduleTimeLabel)}</td></tr>
         <tr><th>住所</th><td colspan="3">${escapeHtml(project.address || "")}</td></tr>
+        ${(project.contacts || []).length ? `<tr><th>現場担当者</th><td colspan="3">${(project.contacts || []).map(c => `${escapeHtml(c.name || "")}${c.name && c.tel ? "　" : ""}${escapeHtml(c.tel || "")}`).join("<br>")}</td></tr>` : ""}
+        ${project.parkingInfo ? `<tr><th>駐車場</th><td colspan="3">${escapeHtml(project.parkingInfo)}</td></tr>` : ""}
       </table>
       ${items.length ? `
       <div class="inst-section-h">明細（品名・数量・単位）</div>
@@ -510,24 +526,29 @@ function buildInstructionPage(project, quote, showPageHead) {
       </table>` : ""}
       <div class="inst-section-h">指示書用メモ</div>
       <div class="inst-memo">${escapeHtml(project.instructionMemo || "（メモなし）")}</div>
-      ${(project.attachments || []).length ? `
-      <div class="inst-section-h">添付写真</div>
-      <div class="inst-photos">
-        ${(project.attachments || []).filter(a => a.fileType && a.fileType.startsWith("image/")).map(a => `<img src="${a.fileUrl}" alt="">`).join("")}
+      ${hasSchedule ? `
+      <div style="page-break-before:always;break-before:page;">
+        <div class="inst-section-h" style="margin-top:0;">工程表</div>
+        ${buildScheduleTableHtml(schedule, { cellSize: 14 })}
       </div>
-      <div class="inst-filelist">
-        ${(project.attachments || []).filter(a => !(a.fileType && a.fileType.startsWith("image/"))).map(a => `📎 ${escapeHtml(a.fileName || "添付ファイル")}`).join("<br>")}
-      </div>` : ""}
+      ` : ""}
+      ${(() => {
+        const otherFiles = (project.attachments || []).filter(a => !(a.fileType && a.fileType.startsWith("image/")));
+        if (otherFiles.length === 0) return "";
+        return `
+          <div class="inst-section-h">添付ファイル</div>
+          <div class="inst-filelist">${otherFiles.map(a => `📎 ${escapeHtml(a.fileName || "添付ファイル")}`).join("<br>")}</div>`;
+      })()}
     </div>`;
 }
 const SINGLE_PAGE_MAX_ITEMS = 16;
-function printInIsolatedWindow(innerHtml, title) {
+function printInIsolatedWindow(innerHtml, title, landscape) {
   const win = window.open("", "_blank");
   if (!win) { window.alert("印刷用ウィンドウを開けませんでした。ブラウザのポップアップブロックを確認してください。"); return; }
   win.document.open();
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${EB_PRINT_CSS}</style><style>
     html,body{margin:0;padding:0;background:#fff;}
-    @page{ size:A4; margin:0; }
+    @page{ size:${landscape ? "A4 landscape" : "A4"}; margin:${landscape ? "8mm" : "0"}; }
   </style></head><body>${innerHtml}</body></html>`);
   win.document.close();
   win.document.title = title;
@@ -549,6 +570,95 @@ function printInstructionReal(project, quote) {
   const html = buildInstructionPage(project, quote, multiPage);
   const title = `指示書_${sanitizeFilename(project.siteName)}`;
   printInIsolatedWindow(html, title);
+}
+
+/* 工程表（ガントチャート）のHTML組み立て。画面表示・印刷どちらからも呼ぶ */
+function buildScheduleTableHtml(schedule, { cellSize = 20 } = {}) {
+  const dateList = enumerateScheduleDates(schedule.startDate, schedule.endDate);
+  if (!dateList || dateList.length === 0) return `<div style="color:#888;font-size:13px;">全体工期が未入力です。</div>`;
+  const workTypes = schedule.workTypes || [];
+  const patterns = (schedule.timePatterns && schedule.timePatterns.length) ? schedule.timePatterns : [{ id: "__default__", name: "", startTime: "", endTime: "" }];
+  const locations = schedule.locations || [];
+  const cells = schedule.cells || {};
+
+  const monthRow = `<tr>
+      <th style="text-align:left;padding:3px 6px;background:#fff;"></th>
+      ${groupScheduleDatesByMonth(dateList).map(g => `<th colspan="${g.colSpan}" style="padding:3px 2px;background:#F0EEE8;font-weight:700;">${g.month}月</th>`).join("")}
+    </tr>`;
+  const dayRow = `<tr>
+      <th style="min-width:110px;text-align:left;padding:3px 6px;">作業箇所</th>
+      ${dateList.map(dstr => {
+        const dt = new Date(dstr + "T00:00:00");
+        const weekend = dt.getDay() === 0 || dt.getDay() === 6;
+        return `<th style="min-width:${cellSize}px;padding:1px;background:${weekend ? "#F4F0E6" : "#eee"};">${dt.getDate()}</th>`;
+      }).join("")}
+    </tr>`;
+  const dowRow = `<tr>
+      <th style="background:#fff;"></th>
+      ${dateList.map(dstr => {
+        const dow = new Date(dstr + "T00:00:00").getDay();
+        const weekend = dow === 0 || dow === 6;
+        return `<th style="padding:1px;font-weight:500;color:${dow === 0 ? "#C0392B" : dow === 6 ? "#2F7DC2" : "#777"};background:${weekend ? "#F4F0E6" : "#fff"};">${DOW_JP_SHORT[dow]}</th>`;
+      }).join("")}
+    </tr>`;
+  const headRow = monthRow + dayRow + dowRow;
+
+  const bodyRows = locations.map(loc => patterns.map((pat, pi) => {
+    const label = pi === 0 ? loc.name : "";
+    const patLabel = patterns.length > 1 || pat.name ? (pat.name + (pat.startTime || pat.endTime ? `（${pat.startTime || ""}〜${pat.endTime || ""}）` : "")) : "";
+    return `<tr>
+      <td style="padding:3px 6px;font-weight:${pi === 0 ? 700 : 400};border-top:${pi === 0 ? "2px solid #999" : "1px solid #ddd"};white-space:nowrap;">${escapeHtml(label)}${patLabel ? `<div style="font-size:9px;color:#777;font-weight:400;">${escapeHtml(patLabel)}</div>` : ""}</td>
+      ${dateList.map(dstr => {
+        const key = `${loc.id}__${pat.id}__${dstr}`;
+        const type = workTypes.find(t => t.id === cells[key]);
+        const dt = new Date(dstr + "T00:00:00");
+        const weekend = dt.getDay() === 0 || dt.getDay() === 6;
+        return `<td style="width:${cellSize}px;height:${cellSize}px;border:1px solid #eee;text-align:center;font-size:9px;font-weight:700;background:${type ? type.color : (weekend ? "#FAF7EF" : "#fff")};color:${type ? readableTextColor(type.color) : "transparent"};">${type ? escapeHtml(type.label || "") : ""}</td>`;
+      }).join("")}
+    </tr>`;
+  }).join("")).join("");
+
+  const usedTypeIds = new Set(Object.values(cells));
+  const legend = workTypes.filter(t => usedTypeIds.has(t.id)).map(t => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;margin-bottom:4px;font-size:11px;">
+    <span style="width:15px;height:15px;border-radius:3px;background:${t.color};color:${readableTextColor(t.color)};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;">${escapeHtml(t.label || "")}</span>${escapeHtml(t.name)}</span>`).join("");
+
+  return `
+    <div style="margin-bottom:10px;display:flex;flex-wrap:wrap;">${legend}</div>
+    <div style="overflow-x:auto;">
+      <table style="border-collapse:collapse;font-size:10.5px;font-family:inherit;">
+        <thead>${headRow}</thead>
+        <tbody>${locations.length === 0 ? `<tr><td colspan="${dateList.length + 1}" style="padding:8px;color:#888;">作業箇所が未登録です。</td></tr>` : bodyRows}</tbody>
+      </table>
+    </div>`;
+}
+function buildSchedulePage(project, schedule) {
+  return `
+    <div style="width:277mm;padding:8mm;box-sizing:border-box;font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans',sans-serif;color:#222;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;margin-bottom:6px;">工　程　表</div>
+          <div style="font-size:14px;font-weight:700;">${escapeHtml(project.siteName)}</div>
+          <div style="font-size:12px;color:#555;">${escapeHtml(project.customerName || "")}</div>
+        </div>
+        ${COMPANY_INFO.logoDataUrl ? `<img src="${COMPANY_INFO.logoDataUrl}" alt="ロゴ" style="height:16mm;">` : ""}
+      </div>
+      <table style="border-collapse:collapse;font-size:11.5px;margin-bottom:12px;">
+        <tr>
+          <th style="background:#F0EEE8;border:1px solid #ccc;padding:4px 10px;text-align:left;">作成日</th><td style="border:1px solid #ccc;padding:4px 10px;">${fmtDate(todayISO())}</td>
+          <th style="background:#F0EEE8;border:1px solid #ccc;padding:4px 10px;text-align:left;">着工</th><td style="border:1px solid #ccc;padding:4px 10px;">${schedule.startDate ? fmtDate(schedule.startDate) : "-"}</td>
+          <th style="background:#F0EEE8;border:1px solid #ccc;padding:4px 10px;text-align:left;">引渡</th><td style="border:1px solid #ccc;padding:4px 10px;">${schedule.handoverDate ? fmtDate(schedule.handoverDate) : "-"}</td>
+        </tr>
+        <tr>
+          <th style="background:#F0EEE8;border:1px solid #ccc;padding:4px 10px;text-align:left;">現場住所</th><td colspan="5" style="border:1px solid #ccc;padding:4px 10px;">${escapeHtml(project.address || "-")}</td>
+        </tr>
+      </table>
+      ${buildScheduleTableHtml(schedule)}
+    </div>`;
+}
+function printScheduleReal(project, schedule) {
+  const html = buildSchedulePage(project, schedule);
+  const title = `工程表_${sanitizeFilename(project.siteName)}`;
+  printInIsolatedWindow(html, title, true);
 }
 
 /* ===================== 小さな共通UI ===================== */
@@ -687,6 +797,7 @@ function SheetRouter({ type, payload, ctx, second }) {
     case "trash": return <TrashSheet ctx={ctx} onClose={close} />;
     case "statusEditor": return <StatusEditorSheet ctx={ctx} project={payload.project} onClose={close} />;
     case "categoryManager": return <CategoryManagerSheet ctx={ctx} onClose={close} />;
+    case "categoryMoveTarget": return <CategoryMoveTargetSheet ctx={ctx} categoryId={payload.categoryId} onMoved={payload.onMoved} onClose={close} />;
     case "masterItemEditor": return <MasterItemEditorSheet ctx={ctx} item={payload.item} onSaved={payload.onSaved} onClose={close} />;
     case "itemUsage": return <ItemUsageSheet ctx={ctx} m={payload.m} onClose={close} />;
     case "costInfo": return <CostInfoSheet ctx={ctx} m={payload.m} onClose={close} />;
@@ -701,6 +812,8 @@ function SheetRouter({ type, payload, ctx, second }) {
     case "projectPickerForCopy": return <ProjectPickerForCopySheet ctx={ctx} pickedQuote={payload.pickedQuote} onClose={close} />;
     case "quoteView": return <QuoteViewSheet ctx={ctx} quote={payload.quote} onClose={close} />;
     case "invoiceEditor": return <InvoiceEditorSheet ctx={ctx} invoice={payload.invoice} projectId={payload.projectId} onClose={close} />;
+    case "scheduleEditor": return <ScheduleEditorSheet ctx={ctx} projectId={payload.projectId} onClose={close} />;
+    case "scheduleView": return <ScheduleViewSheet ctx={ctx} projectId={payload.projectId} onClose={close} />;
     case "invoiceView": return <InvoiceViewSheet ctx={ctx} invoice={payload.invoice} onClose={close} />;
     default: return null;
   }
@@ -771,6 +884,7 @@ function ProjectCard({ ctx, p }) {
     const existingDraft = db.quotes.find(x => x.projectId === p.id && x.isDraft);
     open("quoteEditor", { quote: existingDraft || null, projectId: p.id });
   }
+  const scheduleLocCount = (p.schedule && p.schedule.locations) ? p.schedule.locations.length : 0;
 
   return (
     <div className="card">
@@ -784,15 +898,18 @@ function ProjectCard({ ctx, p }) {
       <div className="progress">{STATUS_ORDER.map((s, i) => <span key={s} className={i <= step ? "done" : ""}></span>)}</div>
       <div className="card-meta">
         {q ? (q.isDraft ? `見積: 下書き中（${fmtYen(q.total)}）` : `見積: ${fmtYen(q.total)}（${q.quoteNo}）`) : "見積: 未作成"}
+        {(p.status === "工程" || p.status === "請求" || p.status === "入金済") && <><br />工程表: {scheduleLocCount ? `${scheduleLocCount}箇所` : "未作成"}</>}
         {inv && <><br />請求: {fmtYen(inv.total)}（{inv.invoiceNo}）{inv.paidDate ? "・入金済 " + fmtDate(inv.paidDate) : ""}</>}
       </div>
       {p.memo && <div className="memo-box">{p.memo}</div>}
       <div className="card-actions">
         {p.status === "依頼" && <button className="btn small" onClick={newQuote}>見積作成</button>}
         {p.status === "見積提出" && <><button className="btn secondary small" onClick={viewQuote}>見積を見る</button><button className="btn small" onClick={markJuchu}>受注にする</button></>}
-        {p.status === "受注" && <><button className="btn secondary small" onClick={viewQuote}>見積を見る</button><button className="btn small" onClick={() => open("invoiceEditor", { invoice: null, projectId: p.id })}>請求書作成</button></>}
+        {p.status === "受注" && <><button className="btn secondary small" onClick={viewQuote}>見積を見る</button><button className="btn small" onClick={() => open("scheduleEditor", { projectId: p.id })}>工程表を作成</button></>}
+        {p.status === "工程" && <><button className="btn secondary small" onClick={() => open("scheduleView", { projectId: p.id })}>工程表を見る</button><button className="btn small" onClick={() => open("invoiceEditor", { invoice: null, projectId: p.id })}>請求書作成</button></>}
         {p.status === "請求" && <><button className="btn secondary small" onClick={viewInvoice}>請求書を見る</button><button className="btn small" onClick={markPaid}>入金済にする</button></>}
         {p.status === "入金済" && <button className="btn secondary small" onClick={viewInvoice}>請求書を見る</button>}
+        {(p.status === "請求" || p.status === "入金済") && scheduleLocCount > 0 && <button className="btn ghost small" onClick={() => open("scheduleView", { projectId: p.id })}>工程表</button>}
         <button className="btn ghost small" onClick={() => open("projectEditor", { project: p })}>編集</button>
       </div>
     </div>
@@ -880,22 +997,29 @@ function StatusEditorSheet({ ctx, project, onClose }) {
 function ProjectEditorSheet({ ctx, project, onClose }) {
   const { db, save, confirm } = ctx;
   const isNew = !project;
-  const p = project ? db.projects.find(x => x.id === project.id) || project : { siteName: "", customerName: "", address: "", memo: "", scheduledDate: "", scheduledTime: "", instructionMemo: "" };
+  const p = project ? db.projects.find(x => x.id === project.id) || project : { siteName: "", customerName: "", address: "", memo: "", scheduledDate: "", scheduledTime: "", instructionMemo: "", contacts: [], parkingInfo: "" };
   const [siteName, setSiteName] = useState(p.siteName);
   const [customerName, setCustomerName] = useState(p.customerName);
   const [address, setAddress] = useState(p.address || "");
   const [scheduledDate, setScheduledDate] = useState(p.scheduledDate || "");
   const [scheduledTime, setScheduledTime] = useState(p.scheduledTime || "");
+  const [contacts, setContacts] = useState(p.contacts && p.contacts.length ? p.contacts : []);
+  const [parkingInfo, setParkingInfo] = useState(p.parkingInfo || "");
   const [instructionMemo, setInstructionMemo] = useState(p.instructionMemo || "");
   const [memo, setMemo] = useState(p.memo || "");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
+  function addContact() { setContacts([...contacts, { id: uid("contact"), name: "", tel: "" }]); }
+  function updateContact(id, field, val) { setContacts(contacts.map(c => c.id === id ? { ...c, [field]: val } : c)); }
+  function delContact(id) { setContacts(contacts.filter(c => c.id !== id)); }
+
   function handleSave() {
     const name = siteName.trim();
     if (!name) { ctx.notice("現場名・工事名を入力してください"); return; }
     const d = draftOf(db);
-    const fields = { customerName: customerName.trim(), siteName: name, address: address.trim(), memo: memo.trim(), scheduledDate, scheduledTime: scheduledTime.trim(), instructionMemo: instructionMemo.trim() };
+    const cleanedContacts = contacts.map(c => ({ ...c, name: c.name.trim(), tel: c.tel.trim() })).filter(c => c.name || c.tel);
+    const fields = { customerName: customerName.trim(), siteName: name, address: address.trim(), memo: memo.trim(), scheduledDate, scheduledTime: scheduledTime.trim(), contacts: cleanedContacts, parkingInfo: parkingInfo.trim(), instructionMemo: instructionMemo.trim() };
     if (isNew) d.projects.push({ id: uid("proj"), ...fields, attachments: [], status: "依頼", createdAt: todayISO(), deletedAt: null });
     else Object.assign(d.projects.find(x => x.id === p.id), fields);
     save(d);
@@ -921,6 +1045,8 @@ function ProjectEditorSheet({ ctx, project, onClose }) {
     const d = draftOf(db);
     const target = d.projects.find(x => x.id === p.id);
     target.scheduledDate = scheduledDate; target.scheduledTime = scheduledTime.trim();
+    target.contacts = contacts.map(c => ({ ...c, name: c.name.trim(), tel: c.tel.trim() })).filter(c => c.name || c.tel);
+    target.parkingInfo = parkingInfo.trim();
     save(d);
     const q = getQuoteForProject(d, p.id, true);
     printInstructionReal(target, q);
@@ -963,6 +1089,17 @@ function ProjectEditorSheet({ ctx, project, onClose }) {
           <input type="text" value={scheduledTime} placeholder="例）9:00〜 / 午後" style={{ flex: 1 }} onChange={e => setScheduledTime(e.target.value)} />
         </div>
       </Field>
+      <Field label="現場担当者・連絡先（任意・複数登録可・指示書に印字されます）">
+        {contacts.map(c => (
+          <div key={c.id} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+            <input type="text" value={c.name} placeholder="例）鈴木様" style={{ flex: 1 }} onChange={e => updateContact(c.id, "name", e.target.value)} />
+            <input type="text" value={c.tel} placeholder="例）090-1234-5678" style={{ flex: 1 }} onChange={e => updateContact(c.id, "tel", e.target.value)} />
+            <button className="icon-btn danger" onClick={() => delContact(c.id)}>✕</button>
+          </div>
+        ))}
+        <button className="btn ghost small" onClick={addContact}>＋ 担当者を追加</button>
+      </Field>
+      <Field label="駐車場情報（任意・指示書に印字されます）"><textarea value={parkingInfo} placeholder="例）現場敷地内に駐車可／近隣コインパーキング利用" onChange={e => setParkingInfo(e.target.value)} /></Field>
       <Field label="指示書用メモ（任意・指示書にそのまま印字されます）"><textarea value={instructionMemo} placeholder="作業員に伝えたいこと、注意点など" onChange={e => setInstructionMemo(e.target.value)} /></Field>
       <Field label="メモ（社内用・弊社しか見れないメモです）"><textarea value={memo} placeholder="現場の注意点や連絡事項など、社内向けのメモ" onChange={e => setMemo(e.target.value)} /></Field>
       {!isNew && <>
@@ -979,7 +1116,7 @@ function ProjectEditorSheet({ ctx, project, onClose }) {
               ? <div className="card-sub" style={{ marginBottom: 4 }}>まだ添付はありません。</div>
               : p.attachments.slice().reverse().map(a => (
                 <div className="attach-item" key={a.id}>
-                  {a.fileType && a.fileType.startsWith("image/") ? <img src={a.fileUrl} alt={a.fileName || ""} /> : <a href={a.fileUrl} target="_blank" rel="noreferrer" className="attach-link">📎 {a.fileName || "添付ファイル"}</a>}
+                  {a.fileType && a.fileType.startsWith("image/") ? <a href={a.fileUrl} target="_blank" rel="noreferrer"><img src={a.fileUrl} alt={a.fileName || ""} /></a> : <a href={a.fileUrl} target="_blank" rel="noreferrer" className="attach-link">📎 {a.fileName || "添付ファイル"}</a>}
                   <div className="attach-meta"><span>{fmtDate(a.createdAt)}</span><button className="icon-btn danger" onClick={() => delAttachment(a)}>✕</button></div>
                 </div>
               ))}
@@ -992,6 +1129,320 @@ function ProjectEditorSheet({ ctx, project, onClose }) {
         <button className="btn secondary" onClick={onClose}>キャンセル</button>
         {!isNew && <button className="btn ghost danger-text" onClick={handleDelete}>削除</button>}
         <button className="btn" onClick={handleSave}>保存</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- 工程表（全体工期×作業箇所×作業種類のガントチャート形式） ---------- */
+const SCHEDULE_MAX_DAYS = 200;
+function seedWorkTypes() {
+  return [
+    { id: uid("wt"), name: "シャッター工事", color: "#2F7DC2", label: "シ" },
+    { id: uid("wt"), name: "足場工事", color: "#E0B400", label: "足" },
+    { id: uid("wt"), name: "搬入・搬出", color: "#2F9E6E", label: "搬" },
+    { id: uid("wt"), name: "予備日", color: "#D98CC0", label: "予" },
+    { id: uid("wt"), name: "その他", color: "#E8622C", label: "他" },
+  ];
+}
+function readableTextColor(hex) {
+  if (!hex) return "#222";
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? "#222" : "#fff";
+}
+function enumerateScheduleDates(start, end) {
+  if (!start || !end) return [];
+  const s = new Date(start + "T00:00:00");
+  const e = new Date(end + "T00:00:00");
+  if (isNaN(s) || isNaN(e) || e < s) return [];
+  const days = Math.round((e - s) / 86400000) + 1;
+  if (days > SCHEDULE_MAX_DAYS) return null;
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(s); d.setDate(d.getDate() + i);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  }
+  return out;
+}
+const DOW_JP_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+function groupScheduleDatesByMonth(dateList) {
+  const groups = [];
+  dateList.forEach(dstr => {
+    const m = new Date(dstr + "T00:00:00").getMonth() + 1;
+    const last = groups[groups.length - 1];
+    if (last && last.month === m) last.colSpan++;
+    else groups.push({ month: m, colSpan: 1 });
+  });
+  return groups;
+}
+function seedTimePatterns() {
+  return [{ id: uid("pat"), name: "日中", startTime: "08:00", endTime: "17:00" }];
+}
+function genTimeSlots(startTime, endTime, intervalHours) {
+  if (!startTime || !endTime || !intervalHours) return [];
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const startMin = sh * 60 + sm, endMin = eh * 60 + em;
+  if (!(endMin > startMin)) return [];
+  const stepMin = intervalHours * 60;
+  const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const slots = [];
+  for (let t = startMin; t < endMin; t += stepMin) slots.push({ start: fmt(t), end: fmt(Math.min(t + stepMin, endMin)) });
+  return slots;
+}
+function ScheduleEditorSheet({ ctx, projectId, onClose }) {
+  const { db, save } = ctx;
+  const project = db.projects.find(p => p.id === projectId);
+  const existing = project && project.schedule && Array.isArray(project.schedule.locations) ? project.schedule : null;
+  const [startDate, setStartDate] = useState(existing ? existing.startDate || "" : "");
+  const [endDate, setEndDate] = useState(existing ? existing.endDate || "" : "");
+  const [workTypes, setWorkTypes] = useState(existing && existing.workTypes && existing.workTypes.length ? existing.workTypes : seedWorkTypes());
+  const [timePatterns, setTimePatterns] = useState(existing && existing.timePatterns && existing.timePatterns.length ? existing.timePatterns : seedTimePatterns());
+  const [locations, setLocations] = useState(existing ? existing.locations || [] : []);
+  const [cells, setCells] = useState(existing ? existing.cells || {} : {});
+  const [selectedType, setSelectedType] = useState(workTypes[0] ? workTypes[0].id : null);
+  const [selectedPattern, setSelectedPattern] = useState(timePatterns[0] ? timePatterns[0].id : null);
+  const [newLocation, setNewLocation] = useState("");
+  const [newTypeName, setNewTypeName] = useState("");
+  const [newTypeColor, setNewTypeColor] = useState("#2F7DC2");
+  const [newTypeLabel, setNewTypeLabel] = useState("");
+  const [newPatName, setNewPatName] = useState("");
+  const [newPatStart, setNewPatStart] = useState("");
+  const [newPatEnd, setNewPatEnd] = useState("");
+  const [handoverDate, setHandoverDate] = useState(existing ? existing.handoverDate || "" : "");
+  const [genStart, setGenStart] = useState("08:00");
+  const [genEnd, setGenEnd] = useState("18:00");
+  const [genInterval, setGenInterval] = useState(2);
+
+  const dateList = enumerateScheduleDates(startDate, endDate);
+
+  function addLocation() {
+    const n = newLocation.trim(); if (!n) return;
+    setLocations([...locations, { id: uid("loc"), name: n }]); setNewLocation("");
+  }
+  function moveLocation(id, dir) {
+    const i = locations.findIndex(l => l.id === id); const j = i + dir;
+    if (j < 0 || j >= locations.length) return;
+    const next = locations.slice(); [next[i], next[j]] = [next[j], next[i]]; setLocations(next);
+  }
+  function delLocation(id) {
+    setLocations(locations.filter(l => l.id !== id));
+    setCells(prev => { const next = { ...prev }; Object.keys(next).forEach(k => { if (k.startsWith(id + "__")) delete next[k]; }); return next; });
+  }
+  function addType() {
+    const n = newTypeName.trim(); if (!n) return;
+    const label = newTypeLabel.trim() || n.slice(0, 1);
+    const t = { id: uid("wt"), name: n, color: newTypeColor, label };
+    setWorkTypes([...workTypes, t]); setNewTypeName(""); setNewTypeLabel("");
+    if (!selectedType) setSelectedType(t.id);
+  }
+  function editType(id, field, val) {
+    setWorkTypes(workTypes.map(t => t.id === id ? { ...t, [field]: val } : t));
+  }
+  function delType(id) {
+    setWorkTypes(workTypes.filter(t => t.id !== id));
+    if (selectedType === id) setSelectedType(null);
+    setCells(prev => { const next = { ...prev }; Object.keys(next).forEach(k => { if (next[k] === id) delete next[k]; }); return next; });
+  }
+  function moveType(id, dir) {
+    const i = workTypes.findIndex(t => t.id === id); const j = i + dir;
+    if (j < 0 || j >= workTypes.length) return;
+    const next = workTypes.slice(); [next[i], next[j]] = [next[j], next[i]]; setWorkTypes(next);
+  }
+  function addPattern() {
+    const n = newPatName.trim(); if (!n) return;
+    const pat = { id: uid("pat"), name: n, startTime: newPatStart, endTime: newPatEnd };
+    setTimePatterns([...timePatterns, pat]); setNewPatName(""); setNewPatStart(""); setNewPatEnd("");
+    if (!selectedPattern) setSelectedPattern(pat.id);
+  }
+  function delPattern(id) {
+    if (timePatterns.length <= 1) return; // 最低1パターンは残す
+    setTimePatterns(timePatterns.filter(p => p.id !== id));
+    if (selectedPattern === id) setSelectedPattern(timePatterns.find(p => p.id !== id)?.id || null);
+    setCells(prev => { const next = { ...prev }; Object.keys(next).forEach(k => { if (k.includes(`__${id}__`)) delete next[k]; }); return next; });
+  }
+  function generatePatterns() {
+    const slots = genTimeSlots(genStart, genEnd, Number(genInterval) || 2);
+    if (!slots.length) return;
+    const existingKeys = new Set(timePatterns.map(p => `${p.startTime}-${p.endTime}`));
+    const additions = slots.filter(s => !existingKeys.has(`${s.start}-${s.end}`)).map(s => ({ id: uid("pat"), name: `${s.start}〜${s.end}`, startTime: s.start, endTime: s.end }));
+    if (!additions.length) return;
+    setTimePatterns(prev => [...prev, ...additions]);
+    if (!selectedPattern) setSelectedPattern(additions[0].id);
+  }
+  function toggleCell(locId, patId, date) {
+    if (!selectedType) return;
+    const key = `${locId}__${patId}__${date}`;
+    setCells(prev => { const next = { ...prev }; if (next[key] === selectedType) delete next[key]; else next[key] = selectedType; return next; });
+  }
+  function handleSave() {
+    const d = draftOf(db);
+    const target = d.projects.find(x => x.id === projectId);
+    target.schedule = { startDate, endDate, handoverDate, workTypes, timePatterns, locations, cells };
+    if (target.status === "受注") target.status = "工程";
+    save(d);
+    onClose();
+  }
+
+  return (
+    <>
+      <SheetHead title="工程表" onClose={onClose} />
+      <div className="card-sub" style={{ marginBottom: 10 }}>{project ? project.siteName : ""} / {project ? project.customerName : ""}</div>
+
+      <Field label="全体工期（着工〜完了予定）">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <span style={{ color: "var(--sub)" }}>〜</span>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
+      </Field>
+      <Field label="引渡日（任意）"><input type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} /></Field>
+
+      <label>作業箇所（表の縦の行になります）</label>
+      {locations.map((l, i) => (
+        <div className="cat-edit-row" key={l.id}>
+          <span style={{ flex: 1, fontSize: 13.5 }}>{l.name}</span>
+          <button className="icon-btn" disabled={i === 0} onClick={() => moveLocation(l.id, -1)}>▲</button>
+          <button className="icon-btn" disabled={i === locations.length - 1} onClick={() => moveLocation(l.id, 1)}>▼</button>
+          <button className="icon-btn danger" onClick={() => delLocation(l.id)}>✕</button>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        <input type="text" value={newLocation} placeholder="例）1号棟1F" onChange={e => setNewLocation(e.target.value)} />
+        <button className="btn secondary small" style={{ whiteSpace: "nowrap" }} onClick={addLocation}>追加</button>
+      </div>
+
+      <label style={{ marginTop: 16 }}>作業時間パターン（タップで選ぶと、今から塗る時間帯になります）</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+        {timePatterns.map(p => (
+          <div key={p.id} onClick={() => setSelectedPattern(p.id)}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 20, cursor: "pointer",
+              border: selectedPattern === p.id ? "2px solid var(--navy)" : "1.5px solid var(--line)",
+              background: selectedPattern === p.id ? "#EEF2F8" : "#fff" }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{p.name}{(p.startTime || p.endTime) ? `（${p.startTime || ""}〜${p.endTime || ""}）` : ""}</span>
+            {timePatterns.length > 1 && <span onClick={e => { e.stopPropagation(); delPattern(p.id); }} style={{ color: "var(--sub)", fontWeight: 700, marginLeft: 2 }}>×</span>}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="text" value={newPatName} placeholder="例）夜間" style={{ flex: 1, minWidth: 80 }} onChange={e => setNewPatName(e.target.value)} />
+        <input type="time" value={newPatStart} onChange={e => setNewPatStart(e.target.value)} />
+        <span style={{ color: "var(--sub)" }}>〜</span>
+        <input type="time" value={newPatEnd} onChange={e => setNewPatEnd(e.target.value)} />
+        <button className="btn secondary small" style={{ whiteSpace: "nowrap" }} onClick={addPattern}>追加</button>
+      </div>
+      <div className="card-sub" style={{ marginTop: 10, marginBottom: 4 }}>まとめて自動生成（例：8:00〜18:00を2時間おき）</div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="time" value={genStart} onChange={e => setGenStart(e.target.value)} />
+        <span style={{ color: "var(--sub)" }}>〜</span>
+        <input type="time" value={genEnd} onChange={e => setGenEnd(e.target.value)} />
+        <input type="number" min="1" max="12" value={genInterval} style={{ width: 56 }} onChange={e => setGenInterval(e.target.value)} />
+        <span style={{ fontSize: 12, color: "var(--sub)" }}>時間おき</span>
+        <button className="btn secondary small" style={{ whiteSpace: "nowrap" }} onClick={generatePatterns}>自動生成</button>
+      </div>
+
+      <label style={{ marginTop: 16 }}>作業種類（「選ぶ」で今から塗る種類にできます。色・記号・名前はその場で編集できます）</label>
+      {workTypes.map((t, i) => (
+        <div key={t.id} className="cat-edit-row" style={{ flexWrap: "wrap" }}>
+          <input type="color" value={t.color} onChange={e => editType(t.id, "color", e.target.value)} style={{ width: 34, height: 30, padding: 1, flexShrink: 0 }} />
+          <input value={t.label || ""} maxLength={2} onChange={e => editType(t.id, "label", e.target.value)}
+            style={{ width: 30, height: 30, padding: 0, textAlign: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }} />
+          <input type="text" defaultValue={t.name} className="cat-name" onBlur={e => editType(t.id, "name", e.target.value)} />
+          <button className={selectedType === t.id ? "btn small" : "btn secondary small"} style={{ whiteSpace: "nowrap" }} onClick={() => setSelectedType(t.id)}>{selectedType === t.id ? "選択中" : "選ぶ"}</button>
+          <button className="icon-btn" disabled={i === 0} onClick={() => moveType(t.id, -1)}>▲</button>
+          <button className="icon-btn" disabled={i === workTypes.length - 1} onClick={() => moveType(t.id, 1)}>▼</button>
+          <button className="icon-btn danger" onClick={() => delType(t.id)}>✕</button>
+        </div>
+      ))}
+      <div className="card-sub" style={{ marginTop: 4 }}>記号（1〜2文字）は表の中にも表示されます（白黒印刷でも区別できるように）。</div>
+      <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+        <input type="color" value={newTypeColor} onChange={e => setNewTypeColor(e.target.value)} style={{ width: 40, padding: 2, height: 36 }} />
+        <input type="text" value={newTypeLabel} placeholder="記号" maxLength={2} style={{ width: 44 }} onChange={e => setNewTypeLabel(e.target.value)} />
+        <input type="text" value={newTypeName} placeholder="新しい作業種類名" onChange={e => setNewTypeName(e.target.value)} />
+        <button className="btn secondary small" style={{ whiteSpace: "nowrap" }} onClick={addType}>追加</button>
+      </div>
+
+      {dateList === null ? (
+        <div className="card-sub" style={{ marginTop: 14 }}>工期が長すぎて表にできません（{SCHEDULE_MAX_DAYS}日まで）。期間を短くしてください。</div>
+      ) : dateList.length === 0 ? (
+        <div className="card-sub" style={{ marginTop: 14 }}>全体工期を入力すると、下に表が出ます。</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 14, border: "1px solid var(--line)", borderRadius: 8 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 10.5 }}>
+            <thead>
+              <tr>
+                <th style={{ position: "sticky", left: 0, background: "#fff", borderRight: "1px solid var(--line)", zIndex: 2 }}></th>
+                {groupScheduleDatesByMonth(dateList).map((g, i) => (
+                  <th key={i} colSpan={g.colSpan} style={{ padding: "3px 2px", borderBottom: "1px solid var(--line)", fontWeight: 700, textAlign: "center", background: "#F0EEE8" }}>{g.month}月</th>
+                ))}
+              </tr>
+              <tr>
+                <th style={{ position: "sticky", left: 0, background: "#fff", padding: "4px 8px", borderBottom: "1px solid var(--line)", borderRight: "1px solid var(--line)", textAlign: "left", minWidth: 88, zIndex: 2 }}>作業箇所</th>
+                {dateList.map(dstr => {
+                  const dt = new Date(dstr + "T00:00:00");
+                  const dow = dt.getDay();
+                  const weekend = dow === 0 || dow === 6;
+                  return <th key={dstr} style={{ padding: "2px 2px", fontWeight: 600, minWidth: 20, textAlign: "center", background: weekend ? "#F4F0E6" : "transparent" }}>{dt.getDate()}</th>;
+                })}
+              </tr>
+              <tr>
+                <th style={{ position: "sticky", left: 0, background: "#fff", borderBottom: "1px solid var(--line)", borderRight: "1px solid var(--line)", zIndex: 2 }}></th>
+                {dateList.map(dstr => {
+                  const dt = new Date(dstr + "T00:00:00");
+                  const dow = dt.getDay();
+                  const weekend = dow === 0 || dow === 6;
+                  return <th key={dstr} style={{ padding: "1px 2px", borderBottom: "1px solid var(--line)", fontWeight: 500, minWidth: 20, textAlign: "center", color: dow === 0 ? "#C0392B" : dow === 6 ? "#2F7DC2" : "var(--sub)", background: weekend ? "#F4F0E6" : "transparent" }}>{DOW_JP_SHORT[dow]}</th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {locations.length === 0
+                ? <tr><td colSpan={dateList.length + 1} style={{ padding: 10, color: "var(--sub)" }}>作業箇所を追加してください</td></tr>
+                : locations.map(loc => timePatterns.map((pat, pi) => (
+                  <tr key={loc.id + "_" + pat.id}>
+                    <td style={{ position: "sticky", left: 0, background: "#fff", padding: "4px 8px", borderTop: pi === 0 ? "2px solid var(--line)" : "1px solid #eee", borderRight: "1px solid var(--line)", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: pi === 0 ? 700 : 400 }}>{pi === 0 ? loc.name : ""}</div>
+                      {(timePatterns.length > 1) && <div style={{ fontSize: 9, color: "var(--sub)" }}>{pat.name}</div>}
+                    </td>
+                    {dateList.map(dstr => {
+                      const dt = new Date(dstr + "T00:00:00");
+                      const weekend = dt.getDay() === 0 || dt.getDay() === 6;
+                      const key = `${loc.id}__${pat.id}__${dstr}`;
+                      const type = workTypes.find(t => t.id === cells[key]);
+                      return <td key={dstr} onClick={() => toggleCell(loc.id, pat.id, dstr)}
+                        style={{ width: 20, height: 22, border: "1px solid #eee", borderTop: pi === 0 ? "2px solid var(--line)" : "1px solid #eee", cursor: "pointer", background: type ? type.color : (weekend ? "#FAF7EF" : "transparent"), color: type ? readableTextColor(type.color) : "transparent", fontSize: 9, fontWeight: 700, textAlign: "center" }}>{type ? (type.label || "") : ""}</td>;
+                    })}
+                  </tr>
+                )))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="sheet-footer">
+        <button className="btn secondary" onClick={onClose}>キャンセル</button>
+        <button className="btn" onClick={handleSave}>保存</button>
+      </div>
+    </>
+  );
+}
+function ScheduleViewSheet({ ctx, projectId, onClose }) {
+  const { db, open } = ctx;
+  const project = db.projects.find(p => p.id === projectId);
+  const schedule = project && project.schedule;
+  return (
+    <>
+      <SheetHead title="工程表" onClose={onClose} />
+      <div className="card-sub" style={{ marginBottom: 4 }}>{project ? project.siteName : ""} / {project ? project.customerName : ""}</div>
+      <div className="card-sub">着工: {schedule && schedule.startDate ? fmtDate(schedule.startDate) : "-"}　引渡: {schedule && schedule.handoverDate ? fmtDate(schedule.handoverDate) : "-"}</div>
+      <div className="card-sub" style={{ marginBottom: 10 }}>現場住所: {project && project.address ? project.address : "-"}</div>
+      {schedule ? <div dangerouslySetInnerHTML={{ __html: buildScheduleTableHtml(schedule) }} /> : <div className="empty">工程表はまだ作成されていません。</div>}
+      <div className="sheet-footer">
+        <button className="btn secondary" onClick={onClose}>閉じる</button>
+        <button className="btn secondary" onClick={() => { onClose(); open("scheduleEditor", { projectId }); }}>編集する</button>
+        {project && schedule && <button className="btn" onClick={() => printScheduleReal(project, schedule)}>印刷 / PDF保存</button>}
       </div>
     </>
   );
@@ -1345,43 +1796,96 @@ function InvoiceViewSheet({ ctx, invoice, onClose }) {
 /* ---------- 単価マスタタブ ---------- */
 function MasterTab({ ctx, filter, setFilter }) {
   const { db, open } = ctx;
+  const [search, setSearch] = useState("");
   const roots = catChildren(db, null);
-  const chipDefs = [{ id: "all", name: "すべて" }, ...roots.map(c => ({ id: c.id, name: c.name }))];
+  const newItemCutoff = Date.now() - NEW_ITEM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const newItems = db.priceMaster.filter(m => m.createdAt && new Date(m.createdAt).getTime() > newItemCutoff).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const chipDefs = [{ id: "all", name: "すべて" }, { id: "__new__", name: `新項目${newItems.length ? `（${newItems.length}）` : ""}` }, ...roots.map(c => ({ id: c.id, name: c.name }))];
   const allowedIds = filter === "all" ? null : catDescendantIds(db, filter);
   const tree = flattenCategoryTreeDepth(db, null, 0);
   const nodesToShow = tree.filter(node => !allowedIds || allowedIds.includes(node.id));
+  const kw = search.trim();
+
+  function MasterRow({ m, categoryLabel }) {
+    const usedIn = findQuotesUsingItem(db, { masterId: m.id, name: m.name }).length;
+    const costCount = (m.costEntries || []).length;
+    const cautionCount = (m.cautionNotes || []).length;
+    return (
+      <div className="master-row" onClick={() => open("masterItemEditor", { item: m })}>
+        <div className="m-body">
+          <div className="m-name">{m.name}</div>
+          <div className="m-sub">{categoryLabel ? `${categoryLabel}・` : ""}単位: {m.unit || "-"}{usedIn ? `・過去見積 ${usedIn}件` : ""}</div>
+        </div>
+        <div className="m-price">{fmtYen(m.unitPrice)}</div>
+        <button className="btn secondary small cost-btn" onClick={e => { e.stopPropagation(); open("costInfo", { m }); }}>下代{costCount ? `（${costCount}）` : ""}</button>
+        <button className="btn secondary small caution-btn" onClick={e => { e.stopPropagation(); open("cautionInfo", { m }); }}>注意{cautionCount ? `（${cautionCount}）` : ""}</button>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="filter-chips">{chipDefs.map(c => <div key={c.id} className={`chip${filter === c.id ? " active" : ""}`} onClick={() => setFilter(c.id)}>{c.name}</div>)}</div>
-      <button className="btn ghost small" style={{ width: "100%", marginBottom: 4 }} onClick={() => open("categoryManager", {})}>カテゴリを編集</button>
-      {nodesToShow.length === 0
-        ? <div className="empty">カテゴリがありません。<br />「カテゴリを編集」から作成してください。</div>
-        : nodesToShow.map(node => {
-          const items = db.priceMaster.filter(m => m.categoryId === node.id);
-          return (
-            <div key={node.id}>
-              <div className="cat-head" style={{ paddingLeft: node.depth * 14 }}>{node.name}</div>
-              {items.length === 0
-                ? <div className="card-sub" style={{ paddingLeft: node.depth * 14 + 4, margin: "2px 0 8px" }}>（この中にはまだ項目がありません）</div>
-                : items.map(m => {
-                  const usedIn = findQuotesUsingItem(db, { masterId: m.id, name: m.name }).length;
-                  const costCount = (m.costEntries || []).length;
-                  const cautionCount = (m.cautionNotes || []).length;
-                  return (
-                    <div className="master-row" key={m.id} onClick={() => open("masterItemEditor", { item: m })}>
-                      <div className="m-body">
-                        <div className="m-name">{m.name}</div>
-                        <div className="m-sub">単位: {m.unit || "-"}{usedIn ? `・過去見積 ${usedIn}件` : ""}</div>
-                      </div>
-                      <div className="m-price">{fmtYen(m.unitPrice)}</div>
-                      <button className="btn secondary small cost-btn" onClick={e => { e.stopPropagation(); open("costInfo", { m }); }}>下代{costCount ? `（${costCount}）` : ""}</button>
-                      <button className="btn secondary small caution-btn" onClick={e => { e.stopPropagation(); open("cautionInfo", { m }); }}>注意{cautionCount ? `（${cautionCount}）` : ""}</button>
-                    </div>
-                  );
-                })}
-            </div>
-          );
-        })}
+      <input type="search" value={search} placeholder="項目名で検索（カテゴリをまたいで探せます）" onChange={e => setSearch(e.target.value)} />
+      <div style={{ height: 10 }}></div>
+      {kw ? (() => {
+        const hits = db.priceMaster.filter(m => m.name.includes(kw));
+        if (hits.length === 0) return <div className="empty">「{kw}」に一致する項目はありません。</div>;
+        return hits.map(m => {
+          const cat = catById(db, m.categoryId);
+          return <MasterRow key={m.id} m={m} categoryLabel={cat ? cat.name : "未分類"} />;
+        });
+      })() : <>
+        <div className="filter-chips">{chipDefs.map(c => <div key={c.id} className={`chip${filter === c.id ? " active" : ""}`} onClick={() => setFilter(c.id)}>{c.name}</div>)}</div>
+        {filter === "__new__" ? (
+          <>
+            <div className="card-sub" style={{ marginBottom: 8 }}>直近{NEW_ITEM_WINDOW_DAYS}日以内に登録した項目です（登録先カテゴリはそのまま・{NEW_ITEM_WINDOW_DAYS}日経つとここから消えます）。</div>
+            {newItems.length === 0
+              ? <div className="empty">直近{NEW_ITEM_WINDOW_DAYS}日以内に登録した項目はありません。</div>
+              : newItems.map(m => {
+                const cat = catById(db, m.categoryId);
+                return <MasterRow key={m.id} m={m} categoryLabel={cat ? cat.name : "未分類"} />;
+              })}
+          </>
+        ) : <>
+          <button className="btn ghost small" style={{ width: "100%", marginBottom: 4 }} onClick={() => open("categoryManager", {})}>カテゴリを編集</button>
+          {nodesToShow.length === 0
+            ? <div className="empty">カテゴリがありません。<br />「カテゴリを編集」から作成してください。</div>
+            : nodesToShow.map(node => {
+              const items = db.priceMaster.filter(m => m.categoryId === node.id);
+              return (
+                <div key={node.id}>
+                  <div className="cat-head" style={{ paddingLeft: node.depth * 14 }}>{node.name}</div>
+                  {items.length === 0
+                    ? <div className="card-sub" style={{ paddingLeft: node.depth * 14 + 4, margin: "2px 0 8px" }}>（この中にはまだ項目がありません）</div>
+                    : items.map(m => <MasterRow key={m.id} m={m} />)}
+                </div>
+              );
+            })}
+        </>}
+      </>}
+    </>
+  );
+}
+function CategoryMoveTargetSheet({ ctx, categoryId, onMoved, onClose }) {
+  const { db } = ctx;
+  const cat = catById(db, categoryId);
+  const blockedIds = catDescendantIds(db, categoryId); // 自分自身と子孫には移動できない
+  const candidates = flattenCategoryTreeDepth(db, null, 0).filter(node => !blockedIds.includes(node.id));
+  function pick(newParentId) { onClose(); onMoved(newParentId); }
+  return (
+    <>
+      <SheetHead title={`「${cat ? cat.name : ""}」の移動先を選択`} onClose={onClose} />
+      <div className="card-sub" style={{ marginBottom: 8 }}>選んだカテゴリの中に、このカテゴリごと（中の項目・子カテゴリも一緒に）移動します。</div>
+      <div className="past-pick">
+        <div className="pp-name">トップレベルにする</div>
+        <button className="btn secondary small" disabled={cat && cat.parentId === null} onClick={() => pick(null)}>選択</button>
+      </div>
+      {candidates.map(node => (
+        <div className="past-pick" key={node.id}>
+          <div className="pp-name">{"　".repeat(node.depth)}{node.name}</div>
+          <button className="btn secondary small" disabled={cat && cat.parentId === node.id} onClick={() => pick(node.id)}>選択</button>
+        </div>
+      ))}
     </>
   );
 }
@@ -1439,23 +1943,31 @@ function CategoryManagerSheet({ ctx, onClose }) {
     const n = newCat.trim(); if (!n) return;
     const d = draftOf(db); d.categories.push({ id: uid("cat"), name: n, parentId: null }); save(d); setNewCat("");
   }
+  function moveTo(id, newParentId) {
+    const cat = catById(db, id);
+    if (cat.parentId === newParentId) return;
+    const dupe = catChildren(db, newParentId).find(c => c.name === cat.name);
+    if (dupe) { notice("移動先に同じ名前のカテゴリがあります"); return; }
+    const d = draftOf(db); d.categories.find(c => c.id === id).parentId = newParentId; save(d);
+  }
 
   return (
     <>
       <SheetHead title="カテゴリを編集" onClose={onClose} />
-      <div className="card-sub" style={{ marginBottom: 8 }}>「＋子」でそのカテゴリの中にさらにカテゴリを作れます。名前を書き換えると中の項目もそのまま残ります。</div>
+      <div className="card-sub" style={{ marginBottom: 8 }}>「＋子」でそのカテゴリの中にさらにカテゴリを作れます。「移動」で別の階層に丸ごと移せます。名前を書き換えても中の項目はそのまま残ります。</div>
       {tree.map(node => {
         const count = db.priceMaster.filter(m => m.categoryId === node.id).length;
         const siblings = catChildren(db, catById(db, node.id).parentId);
         const idx = siblings.findIndex(c => c.id === node.id);
         return (
           <div key={node.id}>
-            <div className="cat-edit-row" style={{ paddingLeft: node.depth * 16 }}>
+            <div className="cat-edit-row" style={{ paddingLeft: node.depth * 16, flexWrap: "wrap" }}>
               <input type="text" defaultValue={node.name} className="cat-name" onBlur={e => rename(node.id, e.target.value)} />
               <span style={{ fontSize: 11, color: "var(--sub)", whiteSpace: "nowrap" }}>{count}件</span>
               <button className="icon-btn" disabled={idx === 0} onClick={() => move(node.id, -1)}>▲</button>
               <button className="icon-btn" disabled={idx === siblings.length - 1} onClick={() => move(node.id, 1)}>▼</button>
               <button className="icon-btn" onClick={() => { setAddingChildParent(p => p === node.id ? null : node.id); setNewChildName(""); }}>＋子</button>
+              <button className="btn secondary small" onClick={() => ctx.open2("categoryMoveTarget", { categoryId: node.id, onMoved: newParentId => moveTo(node.id, newParentId) })}>移動</button>
               <button className="icon-btn danger" onClick={() => del(node.id)}>✕</button>
             </div>
             {addingChildParent === node.id && (
@@ -1521,7 +2033,7 @@ function MasterItemEditorSheet({ ctx, item, onSaved, onClose }) {
     }
     const fields = { categoryId: catId, name: nm, unit: unit.trim(), unitPrice: Number(price) || 0 };
     let saved;
-    if (isNew) { saved = { ...m, ...fields, id: uid("pm") }; d.priceMaster.push(saved); }
+    if (isNew) { saved = { ...m, ...fields, id: uid("pm"), createdAt: todayISO() }; d.priceMaster.push(saved); }
     else { saved = Object.assign(d.priceMaster.find(x => x.id === m.id), fields); }
     save(d);
     if (onSaved) { onClose(); onSaved(saved); } else onClose();
@@ -1595,7 +2107,7 @@ function ItemUsageSheet({ ctx, m, onClose }) {
 function FileEntryPreview({ e }) {
   if (!e.fileUrl) return null;
   const isImage = e.fileType && e.fileType.startsWith("image/");
-  return <div className="ce-file">{isImage ? <img src={e.fileUrl} alt={e.fileName || ""} /> : <a href={e.fileUrl} target="_blank" rel="noreferrer" className="ce-file-link">📎 {e.fileName || "添付ファイル"}</a>}</div>;
+  return <div className="ce-file">{isImage ? <a href={e.fileUrl} target="_blank" rel="noreferrer"><img src={e.fileUrl} alt={e.fileName || ""} /></a> : <a href={e.fileUrl} target="_blank" rel="noreferrer" className="ce-file-link">📎 {e.fileName || "添付ファイル"}</a>}</div>;
 }
 function CostInfoSheet({ ctx, m, onClose }) {
   const { db, save, confirm, open } = ctx;

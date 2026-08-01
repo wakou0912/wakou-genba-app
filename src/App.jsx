@@ -72,6 +72,124 @@ const TEIKI_ADDON_KEYS = new Set(['teiki_m_0_2','teiki_m_2_2','teiki_m_2_3','tei
 function getBokaCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:n<=30?5:6;}
 function getTeikiCol(n){return n<=1?0:n===2?1:n<=6?2:n<=10?3:n<=14?4:5;}
 function applyMult(v,m){const r=m==="夜間"?1.25:m==="日祝"?1.35:m==="日祝夜間"?1.6:1; return Math.ceil(v*r/10)*10;}
+function calcExtraTotal(row){
+  return (row?.extraCharges||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+}
+function calcSonotaTotal(row){
+  return (row?.sonotaCharges||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
+}
+function calcOwnOtherSplit(row,inspTotal){
+  const n7own=parseInt(row?.count7)||0, n3own=parseInt(row?.count3)||0;
+  const n7other=parseInt(row?.count7other)||0, n3other=parseInt(row?.count3other)||0;
+  const n7=n7own+n7other, n3=n3own+n3other;
+  const totalParts=7*n7+3*n3;
+  const extraTotal=calcExtraTotal(row);
+  if(totalParts===0) return {ownTotal:inspTotal+extraTotal, otherTotal:0};
+  const amt7=n7>0?Math.floor(inspTotal*7/totalParts):0;
+  const amt3=n3>0?Math.floor(inspTotal*3/totalParts):0;
+  return {ownTotal:amt7*n7own+amt3*n3own+extraTotal, otherTotal:amt7*n7other+amt3*n3other};
+}
+function calcBokaBreakdown(form,mult,P={}){
+  const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
+  const sE=+form.bokaShutterElec||0,sM=+form.bokaShutterManual||0;
+  const pl=+form.bokaPostless||0,ms=+form.bokaMaxspace||0,bt=+form.bokaBattery||0;
+  const extras=P.bokaExtra||[];
+  const extraQty=extras.reduce((s,it)=>s+(+form[`bokaExtra_${it.id}`]||0),0);
+  const col=getBokaCol(Math.max(sE+sM+extraQty,dO+dC));
+  const dop=P.boka_door_open||BOKA_DOOR_OPEN, dcp=P.boka_door_close||BOKA_DOOR_CLOSE;
+  const sep=P.boka_shutter_elec||BOKA_SHUTTER_ELEC_HOKA, smp=P.boka_shutter_manual||BOKA_SHUTTER_MAN_HOKA;
+  const fixedExtras=P.fixedExtra||[];
+  const items=[];
+  const add=(label,qty,unitPrice)=>{ if(qty>0) items.push({label,qty,unitPrice,subtotal:qty*unitPrice}); };
+  add("ドア随時",dO,dop[col]); add("ドア常閉",dC,dcp[col]);
+  add("シャッター・サンシリカ 電動",sE,sep[col]); add("シャッター・サンシリカ 手動",sM,smp[col]);
+  add("ポストレス",pl,P.boka_postless||1000); add("マックスペース",ms,P.boka_maxspace||500); add("バッテリー交換",bt,P.boka_battery||520);
+  extras.forEach(it=>add(it.name||"追加項目",+form[`bokaExtra_${it.id}`]||0,it.prices[col]||0));
+  fixedExtras.forEach(it=>add(it.name||"固定追加",+form[`bokaFixed_${it.id}`]||0,it.value||0));
+  return {items, finalTotal:calcBoka(form,mult,P)};
+}
+function calcSogoBreakdown(form,mult,P={}){
+  const dO=+form.sogodoorAnytime||0,dC=+form.sogodoorAlwaysClose||0;
+  const sE=+form.sogoShutterElec||0,sM=+form.sogoShutterManual||0;
+  const pl=+form.sogoPostless||0,ms=+form.sogoMaxspace||0,bt=+form.sogoBattery||0;
+  const extras=P.sogoExtra||[];
+  const extraQty=extras.reduce((s,it)=>s+(+form[`sogoExtra_${it.id}`]||0),0);
+  const col=getBokaCol(Math.max(sE+sM+extraQty,dO+dC));
+  const dop=P.boka_door_open||BOKA_DOOR_OPEN, dcp=P.boka_door_close||BOKA_DOOR_CLOSE;
+  const sep=P.sogo_shutter_elec||BOKA_SHUTTER_ELEC_SOGO, smp=P.sogo_shutter_manual||BOKA_SHUTTER_MAN_SOGO;
+  const fixedExtras=P.fixedExtra||[];
+  const items=[];
+  const add=(label,qty,unitPrice)=>{ if(qty>0) items.push({label,qty,unitPrice,subtotal:qty*unitPrice}); };
+  add("[総合]ドア随時",dO,dop[col]); add("[総合]ドア常閉",dC,dcp[col]);
+  add("[総合]シャッター・サンシリカ 電動",sE,sep[col]); add("[総合]シャッター・サンシリカ 手動",sM,smp[col]);
+  add("[総合]ポストレス",pl,P.boka_postless||1000); add("[総合]マックスペース",ms,P.boka_maxspace||500); add("[総合]バッテリー交換",bt,P.boka_battery||520);
+  extras.forEach(it=>add(it.name||"追加項目",+form[`sogoExtra_${it.id}`]||0,it.prices[col]||0));
+  fixedExtras.forEach(it=>add(it.name||"固定追加",+form[`sogoFixed_${it.id}`]||0,it.value||0));
+  if(sE+sM>0) add("電動・手動 追加費",sE+sM,600);
+  if(dO+dC>0) add("ドア 追加費",dO+dC,200);
+  return {items, finalTotal:calcSogo(form,mult,P)};
+}
+function calcTeikiBreakdown(form,mult,P={}){
+  const mKeys=TEIKI_GROUPS_MAIN.flatMap((g,gi)=>g.items.map((sub,si)=>({key:`teiki_m_${gi}_${si}`,label:g.parent+(sub?" "+sub:"")})));
+  const sKeys=TEIKI_GROUPS_SUB.flatMap((g,gi)=>g.items.map((sub,si)=>({key:`teiki_s_${gi}_${si}`,label:g.parent+(sub?" "+sub:"")})));
+  const tge=P.teikiGroupExtra||{};
+  const extraEntries=Object.entries(tge).flatMap(([gk,its])=>its.map(it=>({key:`teikiExtra_${gk}_${it.id}`,prices:it.prices,label:it.name||"追加項目"})));
+  let total=0;
+  [...mKeys,...sKeys].forEach(({key:k})=>{
+    if(TEIKI_ADDON_KEYS.has(k))return;
+    const p=P[k]||TEIKI_PRICE_MAP[k];
+    if(!p||p==="fixed_520")return;
+    total+=+form[k]||0;
+  });
+  extraEntries.forEach(({key,prices})=>{if(prices?.some(v=>v>0))total+=+form[key]||0;});
+  const col=getTeikiCol(total);
+  const items=[];
+  [...mKeys,...sKeys].forEach(({key:k,label})=>{
+    const c=+form[k]||0; if(!c)return;
+    const p=P[k]||TEIKI_PRICE_MAP[k]; if(!p)return;
+    const unitPrice=p==="fixed_520"?(P.teiki_kando_rail||520):p[col];
+    items.push({label,qty:c,unitPrice,subtotal:c*unitPrice});
+  });
+  extraEntries.forEach(({key,prices,label})=>{
+    const c=+form[key]||0; if(!c||!prices)return;
+    const unitPrice=prices[col]||0;
+    items.push({label,qty:c,unitPrice,subtotal:c*unitPrice});
+  });
+  return {items, finalTotal:calcTeiki(form,mult,P)};
+}
+const MULT_RATIO_LABEL = {"夜間":"×1.25","日祝":"×1.35","日祝夜間":"×1.6"};
+function buildAmountFormulaHtml(row,mult,P){
+  const sections=[];
+  if((row.inspectionTypes||[]).includes("防火設備点検")){
+    const b=calcBokaBreakdown(row,mult,P); const kanrihi=calcBokaKanrihi(row);
+    const sE=+row.bokaShutterElec||0,sM=+row.bokaShutterManual||0,dO=+row.doorAnytime||0,dC=+row.doorAlwaysClose||0;
+    const kanrihiItems=[];
+    if(sE+sM>0) kanrihiItems.push({label:"管理費（電動・手動）",qty:sE+sM,unitPrice:600,subtotal:(sE+sM)*600});
+    if(dO+dC>0) kanrihiItems.push({label:"管理費（ドア）",qty:dO+dC,unitPrice:200,subtotal:(dO+dC)*200});
+    if(b.items.length||kanrihi>0) sections.push({title:"防火設備点検",items:b.items,kanrihiItems,inspSubtotal:b.finalTotal,total:b.finalTotal+kanrihi});
+  }
+  if((row.inspectionTypes||[]).includes("総合点検")){
+    const s=calcSogoBreakdown(row,mult,P);
+    if(s.items.length) sections.push({title:"総合点検",items:s.items,inspSubtotal:s.finalTotal,total:s.finalTotal});
+  }
+  if((row.inspectionTypes||[]).includes("定期点検")){
+    const t=calcTeikiBreakdown(row,mult,P);
+    if(t.items.length) sections.push({title:"定期点検",items:t.items,inspSubtotal:t.finalTotal,total:t.finalTotal});
+  }
+  if(!sections.length) return "";
+  const multLabel=MULT_RATIO_LABEL[mult];
+  let html=`<div style="font-size:10px;color:#777;margin:4px 0 6px;line-height:1.7;">`;
+  sections.forEach(sec=>{
+    html+=`<div style="font-weight:bold;color:#555;margin-top:4px;">${sec.title} 計算式</div>`;
+    sec.items.forEach(it=>{ html+=`${it.label}: ${it.qty}台×¥${it.unitPrice.toLocaleString()}=¥${it.subtotal.toLocaleString()}<br>`; });
+    const rawSum=sec.items.reduce((s,it)=>s+it.subtotal,0);
+    if(multLabel&&rawSum>0) html+=`点検金額小計 ¥${rawSum.toLocaleString()} ${multLabel}倍（${mult}）→ ¥${sec.inspSubtotal.toLocaleString()}（10円未満切上げ）<br>`;
+    (sec.kanrihiItems||[]).forEach(it=>{ html+=`${it.label}: ${it.qty}台×¥${it.unitPrice.toLocaleString()}=¥${it.subtotal.toLocaleString()}<br>`; });
+    html+=`小計 ¥${sec.total.toLocaleString()}<br>`;
+  });
+  html+=`</div>`;
+  return html;
+}
 function calcBokaKanrihi(form){
   const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
   const sE=+form.bokaShutterElec||0,sM=+form.bokaShutterManual||0;
@@ -516,6 +634,8 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
   const [coworkerInput, setCoworkerInput] = useState("");
   const count7 = form.count7||"";
   const count3 = form.count3||"";
+  const count7other = form.count7other||"";
+  const count3other = form.count3other||"";
   const addCoworker = (name) => { const n=name.trim(); if(!n)return; if(!(form.coworkers||[]).includes(n)) set("coworkers",[...(form.coworkers||[]),n]); setCoworkerInput(""); };
   const removeCoworker = (name) => set("coworkers",(form.coworkers||[]).filter(w=>w!==name));
 
@@ -526,7 +646,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
       if(SYNC_PREFIXES.some(p=>k===p||k.startsWith(p+'S')||k.startsWith(p+'_')||k.startsWith(p+'d')||k.startsWith(p+'P')||k.startsWith(p+'B')||k.startsWith(p+'M')||k===p)) d[k]=f[k];
     });
     // 明示的にカバー
-    ['count7','count3','calcMult','subjects','inspectionTypes'].forEach(k=>{ d[k]=f[k]||''; });
+    ['count7','count3','count7other','count3other','calcMult','subjects','inspectionTypes'].forEach(k=>{ d[k]=f[k]||''; });
     Object.keys(f).filter(k=>k.startsWith('boka')||k.startsWith('sogo')||k.startsWith('teiki')||k.startsWith('door')).forEach(k=>{d[k]=f[k];});
     return d;
   };
@@ -801,40 +921,106 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                       )}
                     </div>
 
+                  {/* 自社の追加金額（待機・難作業・足場組み立てなど。振り分けせず自社合計に丸ごと加算） */}
+                  <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffd54f20"}}>
+                    <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:8}}>➕ 自社の追加金額（待機・難作業・足場組み立てなど）</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {(form.extraCharges||[]).map((e,i)=>(
+                        <div key={e.id} style={{display:"flex",alignItems:"center",gap:6}}>
+                          <input type="text" value={e.label} placeholder="例）待機1時間" onChange={ev=>{
+                            const list=[...(form.extraCharges||[])]; list[i]={...list[i],label:ev.target.value}; set("extraCharges",list);
+                          }} style={{...mi,flex:1}}/>
+                          <input type="text" inputMode="numeric" value={e.amount||""} placeholder="金額" onChange={ev=>{
+                            if(ev.nativeEvent.isComposing)return;
+                            const v=ev.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                            const list=[...(form.extraCharges||[])]; list[i]={...list[i],amount:v}; set("extraCharges",list);
+                          }} onCompositionEnd={ev=>{
+                            const v=ev.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                            const list=[...(form.extraCharges||[])]; list[i]={...list[i],amount:v}; set("extraCharges",list);
+                          }} style={{...mi,width:90,textAlign:"right"}}/>
+                          <button onClick={()=>set("extraCharges",(form.extraCharges||[]).filter(x=>x.id!==e.id))}
+                            style={{background:"none",border:"none",color:"#546e7a",fontSize:16,cursor:"pointer",padding:"2px 4px"}}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={()=>set("extraCharges",[...(form.extraCharges||[]),{id:Date.now().toString(36),label:"",amount:""}])}
+                        style={{alignSelf:"flex-start",padding:"5px 12px",borderRadius:6,border:"1px dashed #546e7a",background:"transparent",color:"#78909c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        ＋ 自社の追加金額を足す
+                      </button>
+                      {calcExtraTotal(form)>0&&<div style={{color:"#a5d6a7",fontSize:12,fontWeight:700}}>追加金額合計 ¥{calcExtraTotal(form).toLocaleString()}（自社合計にそのまま加算）</div>}
+                    </div>
+                  </div>
+
+                  {/* 別途金額（9尺・残材など。振り分け計算には一切関わらず、集計PDFに金額だけ表示） */}
+                  <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffd54f20"}}>
+                    <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:8}}>📎 別途金額（9尺・残材など・集計には反映せずPDF表示のみ）</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {(form.sonotaCharges||[]).map((e,i)=>(
+                        <div key={e.id} style={{display:"flex",alignItems:"center",gap:6}}>
+                          <input type="text" value={e.label} placeholder="例）9尺" onChange={ev=>{
+                            const list=[...(form.sonotaCharges||[])]; list[i]={...list[i],label:ev.target.value}; set("sonotaCharges",list);
+                          }} style={{...mi,flex:1}}/>
+                          <input type="text" inputMode="numeric" value={e.amount||""} placeholder="金額" onChange={ev=>{
+                            if(ev.nativeEvent.isComposing)return;
+                            const v=ev.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                            const list=[...(form.sonotaCharges||[])]; list[i]={...list[i],amount:v}; set("sonotaCharges",list);
+                          }} onCompositionEnd={ev=>{
+                            const v=ev.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0));
+                            const list=[...(form.sonotaCharges||[])]; list[i]={...list[i],amount:v}; set("sonotaCharges",list);
+                          }} style={{...mi,width:90,textAlign:"right"}}/>
+                          <button onClick={()=>set("sonotaCharges",(form.sonotaCharges||[]).filter(x=>x.id!==e.id))}
+                            style={{background:"none",border:"none",color:"#546e7a",fontSize:16,cursor:"pointer",padding:"2px 4px"}}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={()=>set("sonotaCharges",[...(form.sonotaCharges||[]),{id:Date.now().toString(36),label:"",amount:""}])}
+                        style={{alignSelf:"flex-start",padding:"5px 12px",borderRadius:6,border:"1px dashed #546e7a",background:"transparent",color:"#78909c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        ＋ 別途金額を足す
+                      </button>
+                      {calcSonotaTotal(form)>0&&<div style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>別途金額合計 ¥{calcSonotaTotal(form).toLocaleString()}（集計には含まれません）</div>}
+                    </div>
+                  </div>
+
                   {/* 割合計算 */}
                   {(()=>{
-                    const total=(calcBoka(form,calcMult,prices||{}))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
-                    if(total===0)return null;
-                    const n7=parseInt(count7)||0;
-                    const n3=parseInt(count3)||0;
+                    const inspTotal=(calcBoka(form,calcMult,prices||{}))+(calcSogo(form,calcMult,prices||{}))+(calcTeiki(form,calcMult,prices||{}));
+                    const extraTotal=calcExtraTotal(form);
+                    if(inspTotal===0&&extraTotal===0)return null;
+                    const n7own=parseInt(count7)||0;
+                    const n3own=parseInt(count3)||0;
+                    const n7other=parseInt(count7other)||0;
+                    const n3other=parseInt(count3other)||0;
+                    const n7=n7own+n7other, n3=n3own+n3other;
                     const totalParts=7*n7+3*n3;
-                    const amt7=totalParts>0&&n7>0?Math.floor(total*7/totalParts):0;
-                    const amt3=totalParts>0&&n3>0?Math.floor(total*3/totalParts):0;
+                    const amt7=totalParts>0&&n7>0?Math.floor(inspTotal*7/totalParts):0;
+                    const amt3=totalParts>0&&n3>0?Math.floor(inspTotal*3/totalParts):0;
+                    const ownTotal=amt7*n7own+amt3*n3own+extraTotal;
+                    const otherTotal=amt7*n7other+amt3*n3other;
+                    const Row=({label,field,val,amt})=>(
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:64}}>{label}</span>
+                        <input type="text" inputMode="numeric" value={val} onChange={e=>{if(!e.nativeEvent.isComposing)set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                        <span style={{color:"#546e7a",fontSize:12}}>人</span>
+                        {amt>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人</span>}
+                        {amt>0&&<button onClick={()=>set("yotei",String(amt))}
+                          style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                          予定金額に反映
+                        </button>}
+                      </div>
+                    );
                     return(
                       <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffd54f20"}}>
-                        <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算（合計 ¥{total.toLocaleString()}）</div>
+                        <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算（点検金額 ¥{inspTotal.toLocaleString()}{extraTotal>0?`　＋ 自社追加 ¥${extraTotal.toLocaleString()}`:""}）</div>
                         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>7割</span>
-                            <input type="text" inputMode="numeric" value={count7} onChange={e=>{if(!e.nativeEvent.isComposing)set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("count7",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
-                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                            {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
-                            {amt7>0&&<button onClick={()=>set("yotei",String(amt7))}
-                              style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                              予定金額に反映
-                            </button>}
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:48}}>3割</span>
-                            <input type="text" inputMode="numeric" value={count3} onChange={e=>{if(!e.nativeEvent.isComposing)set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set("count3",e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
-                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                            {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
-                            {amt3>0&&<button onClick={()=>set("yotei",String(amt3))}
-                              style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                              予定金額に反映
-                            </button>}
-                          </div>
+                          <Row label="自社7割" field="count7" val={count7} amt={amt7}/>
+                          <Row label="自社3割" field="count3" val={count3} amt={amt3}/>
+                          <Row label="他社7割" field="count7other" val={count7other} amt={amt7}/>
+                          <Row label="他社3割" field="count3other" val={count3other} amt={amt3}/>
                           {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
+                          {(ownTotal>0||otherTotal>0)&&(
+                            <div style={{display:"flex",gap:14,marginTop:2}}>
+                              {ownTotal>0&&<span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社合計 ¥{ownTotal.toLocaleString()}</span>}
+                              {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -871,7 +1057,8 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                       {syncModal.conflicting.map(r=>(
                         <div key={r.id} style={{padding:"6px 10px",background:"#080e14",borderRadius:6,border:"1px solid #1a2634",marginBottom:6,fontSize:11}}>
                           <span style={{color:"#4fc3f7",fontWeight:700}}>{r.worker}</span>
-                          {(r.count7||r.count3)&&<span style={{color:"#78909c",marginLeft:8}}>7割:{r.count7||"–"}人 / 3割:{r.count3||"–"}人</span>}
+                          {(r.count7||r.count3)&&<span style={{color:"#78909c",marginLeft:8}}>自社7割:{r.count7||"–"}人 / 自社3割:{r.count3||"–"}人</span>}
+                          {(r.count7other||r.count3other)&&<span style={{color:"#78909c",marginLeft:8}}>他社7割:{r.count7other||"–"}人 / 他社3割:{r.count3other||"–"}人</span>}
                           {r.syncedBy&&<span style={{color:"#37474f",marginLeft:8}}>（最終更新:{r.syncedBy}）</span>}
                         </div>
                       ))}
@@ -2906,7 +3093,7 @@ ${pdfCols.ake?`<td></td>`:""}
 
       {/* ─── 点検集計タブ ─── */}
       {tab==="inspection"&&(
-        <InspectionSummary allRows={allRows} exportPDF={exportPDF} prices={db.prices||{}} onEdit={setEditRow}/>
+        <InspectionSummary allRows={allRows} exportPDF={exportPDF} prices={db.prices||{}} onEdit={setEditRow} extraCoworkers={db.extraCoworkers||[]}/>
       )}
 
       {tab==="info"&&(
@@ -3100,9 +3287,12 @@ function HolidayEditor({db, setDb, showMsg}) {
 // ═══════════════════════════════════════════════════════
 // INSPECTION SUMMARY
 // ═══════════════════════════════════════════════════════
-function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
+function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworkers=[]}) {
+  const workerOptions = [...WORKERS.filter(w=>w!=="その他"), ...extraCoworkers];
   const [filterType, setFilterType] = useState("");
   const [filterMonth, setFilterMonth] = useState(()=>new Date().toISOString().slice(0,7));
+  const [filterWorker, setFilterWorker] = useState("");
+  const [searchGenba, setSearchGenba] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [ratios, setRatios] = useState({});
   const setRatio = (id, worker, val) => setRatios(p=>({...p,[id]:{...(p[id]||{}),[worker]:val}}));
@@ -3118,6 +3308,8 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
     if(!(r.subjects||[]).includes("点検")) return false;
     if(filterType && !(r.inspectionTypes||[]).includes(filterType)) return false;
     if(filterMonth && !r.date?.startsWith(filterMonth)) return false;
+    if(filterWorker && r.worker!==filterWorker) return false;
+    if(searchGenba && !r.genba?.includes(searchGenba)) return false;
     return true;
   });
 
@@ -3172,11 +3364,11 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
       });
     }
     const kubun = getKubun(r.date, r.startTime);
-    const mult = kubun?.label || "なし";
+    const mult = r.calcMult || "なし";
     const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices)+calcBokaKanrihi(r) : 0;
     const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
     const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
-    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, row:r};
+    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, extraTotal:calcExtraTotal(r), row:r};
   }).sort((a,b)=>{
     if(a.dates[0]>b.dates[0])return 1;
     if(a.dates[0]<b.dates[0])return -1;
@@ -3187,6 +3379,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
   const exportSelected = (genbas) => {
     const targets = genbas.filter(g=>selected.has(g.id));
     if(targets.length===0){ alert("PDFにする現場を選択してください"); return; }
+    let grandTotal=0, grandOwnTotal=0;
     const allHtml = targets.map(g=>{
       const workerRow = allRows.find(r=>r.id===g.id);
       const sectionStr = (workerRow?.sections||[]).join("・")||"—";
@@ -3194,6 +3387,16 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
       const DOW_JP_S = ["日","月","火","水","木","金","土"];
       const dowStr = g.dates[0]?DOW_JP_S[new Date(g.dates[0]+"T00:00:00").getDay()]:"";
       const kubunStr = g.kubun?.label||"";
+      const inspAmount = g.bokaAmt+g.sogoAmt+g.teikiAmt;
+      const amount = inspAmount+g.extraTotal;
+      const {ownTotal}=calcOwnOtherSplit(workerRow,inspAmount);
+      grandTotal+=amount; grandOwnTotal+=ownTotal;
+      const extraHtml = (workerRow?.extraCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
+        `<div style="font-size:11px;color:#555;margin-bottom:2px">＋ ${e.label||"追加"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
+      const sonotaHtml = (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
+        `<div style="font-size:11px;color:#8d6e63;margin-bottom:2px">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
+      const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
+      const amountHtml = amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>${formulaHtml}${extraHtml}${sonotaHtml}<div style="margin-bottom:4px"></div>`:"";
       const teikiHtml = Object.keys(g.teikiData).length>0
         ? `<h3 class="teiki">定期点検</h3><table><thead><tr><th>種別</th><th style="text-align:right">台数</th></tr></thead><tbody>
            ${Object.entries(g.teikiData).map(([l,c])=>`<tr><td>${l}</td><td style="text-align:right;font-weight:bold">${c}台</td></tr>`).join("")}
@@ -3204,11 +3407,13 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit}) {
            </tbody></table>` : "";
       const memoHtml = workerRow?.memo?`<div style="margin:8px 0;padding:7px 10px;background:#f9f9f9;border-left:3px solid #90a4ae;font-size:11px">📝 ${workerRow.memo}</div>`:"";
       return `<div style="border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:20px;page-break-inside:avoid">
-        <div style="font-size:16px;font-weight:bold;color:#1a237e;margin-bottom:8px">${g.genba}</div>
-        <div style="font-size:11px;color:#555;margin-bottom:3px">${g.kubun?.label?"["+kubunStr+"] ":""}${g.dates[0]}（${dowStr}）${g.startTime?" "+g.startTime+(g.endTime?" 〜 "+g.endTime:""):""}</div>
-        <div style="font-size:11px;color:#555;margin-bottom:3px">作業員: ${g.worker.join("・")}</div>
-        <div style="font-size:11px;color:#555;margin-bottom:6px">所課: ${sectionStr} ／ 営業名: ${eigyoStr}</div>
-        ${memoHtml}${bokaHtml}${teikiHtml}
+        <div style="font-size:16px;font-weight:bold;color:#1a237e;margin-bottom:6px">${g.genba}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:#555;margin-bottom:6px">
+          <span>${g.kubun?.label?"["+kubunStr+"] ":""}${g.dates[0]}（${dowStr}）${g.startTime?" "+g.startTime+(g.endTime?" 〜 "+g.endTime:""):""}</span>
+          <span>作業員: ${g.worker.join("・")}</span>
+          <span>所課: ${sectionStr} ／ 営業名: ${eigyoStr}</span>
+        </div>
+        ${amountHtml}${memoHtml}${bokaHtml}${teikiHtml}
       </div>`;
     }).join("");
     const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>点検集計</title>
@@ -3218,10 +3423,11 @@ th{background:#f5f5f5;padding:5px 10px;text-align:left;font-size:10px;border-bot
 td{padding:5px 10px;border-bottom:1px solid #eee;font-size:11px}
 tr{page-break-inside:avoid}
 div[style*="page-break-inside"]{page-break-inside:avoid}
-h3.teiki{font-size:12px;color:#2e7d32;margin:12px 0 6px;border-bottom:2px solid #a5d6a7;padding-bottom:3px}
-h3.boka{font-size:12px;color:#e65100;margin:12px 0 6px;border-bottom:2px solid #ffcc80;padding-bottom:3px}
+h3.teiki{font-size:11px;color:#2e7d32;margin:10px 0 5px;border-bottom:1px solid #a5d6a7;padding-bottom:2px}
+h3.boka{font-size:11px;color:#e65100;margin:10px 0 5px;border-bottom:1px solid #ffcc80;padding-bottom:2px}
 @media print{body{margin:12px}}</style></head>
-<body><h2 style="font-size:16px;margin-bottom:16px">📋 点検台数集計（${targets.length}現場）</h2>
+<body><h2 style="font-size:16px;margin-bottom:8px">📋 点検台数集計（${targets.length}現場）</h2>
+<div style="font-size:13px;font-weight:bold;margin-bottom:16px;padding:10px 14px;background:#eef2f8;border-radius:6px;color:#1a237e;">合計金額 ¥${grandTotal.toLocaleString()}　／　自社合計 ¥${grandOwnTotal.toLocaleString()}</div>
 ${allHtml}</body></html>`;
     const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
@@ -3243,18 +3449,31 @@ ${allHtml}</body></html>`;
     const eigyoStr = (workerRow?.eigyoList||[]).join("・")||"—";
     const DOW_JP_S = ["日","月","火","水","木","金","土"];
     const dowStr = g.dates[0] ? DOW_JP_S[new Date(g.dates[0]+"T00:00:00").getDay()] : "";
+    const inspAmount = g.bokaAmt+g.sogoAmt+g.teikiAmt;
+    const amount = inspAmount+g.extraTotal;
+    const {ownTotal}=calcOwnOtherSplit(workerRow,inspAmount);
+    const extraHtml = (workerRow?.extraCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
+      `<div class="meta">＋ ${e.label||"追加"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("")
+      + (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
+      `<div class="meta" style="color:#8d6e63;">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
+    const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
     const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${g.genba} 点検集計</title>
 <style>body{font-family:'Hiragino Sans',sans-serif;margin:24px;font-size:13px}h2{font-size:16px;margin-bottom:4px}
 .meta{color:#666;font-size:11px;margin-bottom:4px}table{border-collapse:collapse;width:100%;max-width:400px}
 th{background:#333;color:#fff;padding:6px 10px;text-align:left;font-size:11px}
 tr{page-break-inside:avoid}td{padding:5px 10px;border-bottom:1px solid #eee}
-h3.teiki{font-size:13px;color:#2e7d32;margin:14px 0 6px;border-bottom:2px solid #a5d6a7;padding-bottom:3px}
-h3.boka{font-size:13px;color:#e65100;margin:14px 0 6px;border-bottom:2px solid #ffcc80;padding-bottom:3px}
+h3.teiki{font-size:11px;color:#2e7d32;margin:12px 0 5px;border-bottom:1px solid #a5d6a7;padding-bottom:2px}
+h3.boka{font-size:11px;color:#e65100;margin:12px 0 5px;border-bottom:1px solid #ffcc80;padding-bottom:2px}
 @media print{body{margin:12px}}</style></head>
 <body><h2>📋 ${g.genba}</h2>
-<div class="meta">日付: ${g.dates[0]}（${dowStr}）${g.startTime?" "+g.startTime+(g.endTime?" 〜 "+g.endTime:""):""}</div>
-<div class="meta">区分: ${kubunStr||"—"} ／ 作業員: ${g.worker.join("・")}</div>
-<div class="meta">所課: ${sectionStr} ／ 営業名: ${eigyoStr}</div>
+<div style="display:flex;flex-wrap:wrap;gap:4px 14px;" class="meta">
+  <span>日付: ${g.dates[0]}（${dowStr}）${g.startTime?" "+g.startTime+(g.endTime?" 〜 "+g.endTime:""):""}</span>
+  <span>区分: ${kubunStr||"—"} ／ 作業員: ${g.worker.join("・")}</span>
+  <span>所課: ${sectionStr} ／ 営業名: ${eigyoStr}</span>
+</div>
+${amount>0?`<div style="font-size:13px;font-weight:bold;color:#1a237e;margin:6px 0 2px;">金額: ¥${amount.toLocaleString()}${ownTotal!==amount?`（自社分 ¥${ownTotal.toLocaleString()}）`:""}</div>`:""}
+${formulaHtml}
+${extraHtml}
 ${workerRow?.memo?`<div class="meta" style="margin-top:6px;padding:6px 8px;background:#f9f9f9;border-left:3px solid #ccc">📝 メモ: ${workerRow.memo}</div>`:""}
 ${teikiHtml}${bokaHtml}</body></html>`;
     const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
@@ -3271,6 +3490,12 @@ ${teikiHtml}${bokaHtml}</body></html>`;
         <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{...selA,minWidth:120}}>
           {months.map(m=><option key={m}>{m}</option>)}
         </select>
+        <select value={filterWorker} onChange={e=>setFilterWorker(e.target.value)} style={{...selA,minWidth:110}}>
+          <option value="">全作業員</option>
+          {workerOptions.map(w=><option key={w}>{w}</option>)}
+        </select>
+        <input type="text" value={searchGenba} onChange={e=>setSearchGenba(e.target.value)} placeholder="🔍 現場名"
+          style={{...sinp,width:140}}/>
         <span style={{color:"#37474f",fontSize:11}}>{genbas.length}現場</span>
         <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
           <button onClick={()=>selectAll(genbas.map(g=>g.id))} style={{...btnBase,background:"transparent",border:"1px solid #1a2634",color:"#546e7a",fontSize:11,padding:"4px 10px"}}>全選択</button>
@@ -3384,44 +3609,57 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                         <div style={{color:"#86efac",fontWeight:900,fontSize:14}}>¥{g.teikiAmt.toLocaleString()}</div>
                       </div>
                     )}
-                    {(g.bokaAmt+g.sogoAmt+g.teikiAmt)>0&&(g.bokaAmt>0)+(g.sogoAmt>0)+(g.teikiAmt>0)>1&&(
+                    {g.extraTotal>0&&(
+                      <div style={{background:"#0a1a0f",borderRadius:6,padding:"5px 12px",border:"1px solid #ffb74d40"}}>
+                        <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>追加金額</div>
+                        <div style={{color:"#ffb74d",fontWeight:900,fontSize:14}}>¥{g.extraTotal.toLocaleString()}</div>
+                      </div>
+                    )}
+                    {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal)>0&&(g.bokaAmt>0)+(g.sogoAmt>0)+(g.teikiAmt>0)+(g.extraTotal>0)>1&&(
                       <div style={{background:"#0d1520",borderRadius:6,padding:"5px 12px",border:"1px solid #37474f"}}>
                         <div style={{color:"#546e7a",fontSize:9,marginBottom:1}}>合計</div>
-                        <div style={{color:"#fff",fontWeight:900,fontSize:14}}>¥{(g.bokaAmt+g.sogoAmt+g.teikiAmt).toLocaleString()}</div>
+                        <div style={{color:"#fff",fontWeight:900,fontSize:14}}>¥{(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal).toLocaleString()}</div>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* 割合計算（count7/count3から自動表示） */}
-                {(g.bokaAmt+g.sogoAmt+g.teikiAmt)>0&&(g.row.count7||g.row.count3)&&(()=>{
-                  const total=g.bokaAmt+g.sogoAmt+g.teikiAmt;
-                  const n7=parseInt(g.row.count7)||0;
-                  const n3=parseInt(g.row.count3)||0;
+                {/* 割合計算（count7/count3/count7other/count3otherから自動表示） */}
+                {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal)>0&&(g.row.count7||g.row.count3||g.row.count7other||g.row.count3other)&&(()=>{
+                  const inspTotal=g.bokaAmt+g.sogoAmt+g.teikiAmt;
+                  const n7own=parseInt(g.row.count7)||0;
+                  const n3own=parseInt(g.row.count3)||0;
+                  const n7other=parseInt(g.row.count7other)||0;
+                  const n3other=parseInt(g.row.count3other)||0;
+                  const n7=n7own+n7other, n3=n3own+n3other;
                   const totalParts=7*n7+3*n3;
-                  const amt7=totalParts>0&&n7>0?Math.floor(total*7/totalParts):0;
-                  const amt3=totalParts>0&&n3>0?Math.floor(total*3/totalParts):0;
+                  const amt7=totalParts>0&&n7>0?Math.floor(inspTotal*7/totalParts):0;
+                  const amt3=totalParts>0&&n3>0?Math.floor(inspTotal*3/totalParts):0;
+                  const ownTotal=amt7*n7own+amt3*n3own+g.extraTotal;
+                  const otherTotal=amt7*n7other+amt3*n3other;
+                  const CountRow=({label,n,amt})=>n>0?(
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:52}}>{label}</span>
+                      <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n}</span>
+                      <span style={{color:"#546e7a",fontSize:12}}>人</span>
+                      {amt>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人</span>}
+                    </div>
+                  ):null;
                   return(
                     <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
                       <div style={{color:"#546e7a",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算</div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        {n7>0&&(
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:36}}>7割</span>
-                            <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n7}</span>
-                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                            {amt7>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt7.toLocaleString()}/人</span>}
-                          </div>
-                        )}
-                        {n3>0&&(
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:36}}>3割</span>
-                            <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n3}</span>
-                            <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                            {amt3>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt3.toLocaleString()}/人</span>}
-                          </div>
-                        )}
+                        <CountRow label="自社7割" n={n7own} amt={amt7}/>
+                        <CountRow label="自社3割" n={n3own} amt={amt3}/>
+                        <CountRow label="他社7割" n={n7other} amt={amt7}/>
+                        <CountRow label="他社3割" n={n3other} amt={amt3}/>
                         {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
+                        {(ownTotal>0||otherTotal>0)&&(
+                          <div style={{display:"flex",gap:14}}>
+                            {ownTotal>0&&<span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社合計 ¥{ownTotal.toLocaleString()}</span>}
+                            {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
+                          </div>
+                        )}
                         {g.worker.length>0&&(
                           <div style={{color:"#4fc3f7",fontSize:11,marginTop:2}}>{g.worker.join(" ／ ")}</div>
                         )}

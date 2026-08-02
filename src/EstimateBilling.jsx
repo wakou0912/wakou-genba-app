@@ -326,6 +326,7 @@ function migrate(data) {
   d.priceMaster.forEach(m => {
     if (typeof m.useCount !== "number") m.useCount = 0;
     if (!Array.isArray(m.costEntries)) m.costEntries = [];
+    if (typeof m.baseCostEntryId === "undefined") m.baseCostEntryId = null;
     if (!Array.isArray(m.cautionNotes)) m.cautionNotes = [];
     if (typeof m.cautionHeader !== "string") m.cautionHeader = "";
     if (!m.categoryId || !d.categories.find(c => c.id === m.categoryId)) {
@@ -698,12 +699,21 @@ function ItemsEditor({ items, setItems }) {
     setItems(next.length ? next : [blankItem()]);
   };
   const totals = calcTotals(items);
+  const profits = items.map(it => {
+    if (!it._master) return null;
+    const baseCost = baseCostOf(it._master) || 0;
+    const qty = Number(it.qty) || 0, unitPrice = Number(it.unitPrice) || 0;
+    return (unitPrice - baseCost) * qty;
+  });
+  const knownProfits = profits.filter(p => p !== null);
+  const totalProfit = knownProfits.length ? knownProfits.reduce((s, p) => s + p, 0) : null;
   return (
     <>
       <div className="item-head"><div>項目</div><div>数量</div><div>単位</div><div>単価</div><div></div><div></div></div>
       <div>
         {items.map((it, i) => {
           const priceDiffers = it._master && Number(it._master.unitPrice) !== Number(it.unitPrice);
+          const baseCost = it._master ? (baseCostOf(it._master) || 0) : null;
           return (
             <div key={it.id}>
               <div className="item-row">
@@ -718,6 +728,7 @@ function ItemsEditor({ items, setItems }) {
                 <button className="del-row" onClick={() => del(it.id)}>×</button>
               </div>
               {it._master && <div className="std-price-line">標準単価: {fmtYen(it._master.unitPrice)}{priceDiffers ? `（今回 ${fmtYen(it.unitPrice)}）` : ""}</div>}
+              {it._master && <div className="std-price-line" style={{ color: "var(--orange)" }}>基準下代 {fmtYen(baseCost)} ・ 粗利 {fmtYen((Number(it.unitPrice) - baseCost) * (Number(it.qty) || 0))}</div>}
               {it._master && it._master.cautionHeader && <div className="caution-line" style={{ margin: "-4px 0 8px" }}>⚠ {it._master.cautionHeader}{(it._master.cautionNotes || []).length ? `　他${(it._master.cautionNotes || []).length}件` : ""}</div>}
             </div>
           );
@@ -728,9 +739,26 @@ function ItemsEditor({ items, setItems }) {
         <div className="totals-row"><span>小計</span><span>{fmtYen(totals.subtotal)}</span></div>
         <div className="totals-row"><span>消費税(10%)</span><span>{fmtYen(totals.tax)}</span></div>
         <div className="totals-row grand"><span>合計</span><span>{fmtYen(totals.total)}</span></div>
+        {totalProfit !== null && <div className="totals-row" style={{ color: "var(--orange)" }}><span>想定粗利</span><span>{fmtYen(totalProfit)}</span></div>}
       </div>
     </>
   );
+}
+function baseCostOf(master) {
+  if (!master) return null;
+  const be = (master.costEntries || []).find(e => e.id === master.baseCostEntryId);
+  return be && Number(be.price) > 0 ? Number(be.price) : null;
+}
+function calcDocProfit(doc, db) {
+  if (!doc) return null;
+  const items = withMasterInfo(doc.items, db);
+  const withMaster = items.filter(it => it._master);
+  if (!withMaster.length) return null;
+  const total = withMaster.reduce((s, it) => {
+    const baseCost = baseCostOf(it._master) || 0;
+    return s + (Number(it.unitPrice) - baseCost) * (Number(it.qty) || 0);
+  }, 0);
+  return { total };
 }
 function withMasterInfo(items, db) {
   return items.map(it => it.masterId ? { ...it, _master: db.priceMaster.find(m => m.id === it.masterId) || null } : it);
@@ -865,6 +893,7 @@ function ProjectCard({ ctx, p }) {
   const inv = getInvoiceForProject(db, p.id);
   const step = STATUS_ORDER.indexOf(p.status);
   const hasAttach = (p.attachments || []).length > 0;
+  const profit = calcDocProfit(inv || q, db);
 
   function markJuchu() {
     confirm(`「${p.siteName}」を受注にしますか？`, () => {
@@ -908,6 +937,7 @@ function ProjectCard({ ctx, p }) {
         {q ? (q.isDraft ? `見積: 下書き中（${fmtYen(q.total)}）` : `見積: ${fmtYen(q.total)}（${q.quoteNo}）`) : "見積: 未作成"}
         {(p.status === "工程" || p.status === "請求" || p.status === "入金済") && <><br />工程表: {scheduleLocCount ? `${scheduleLocCount}箇所` : "未作成"}</>}
         {inv && <><br />請求: {fmtYen(inv.total)}（{inv.invoiceNo}）{inv.paidDate ? "・入金済 " + fmtDate(inv.paidDate) : ""}</>}
+        {profit !== null && <><br /><span style={{ color: "var(--orange)" }}>想定粗利: {fmtYen(profit.total)}</span></>}
       </div>
       {p.memo && <div className="memo-box">{p.memo}</div>}
       <div className="card-actions">
@@ -1643,6 +1673,8 @@ function QuoteViewSheet({ ctx, quote, onClose }) {
   if (!quote) return <><SheetHead title="お知らせ" onClose={onClose} /><div>見積書がありません</div></>;
   const q = db.quotes.find(x => x.id === quote.id) || quote;
   const project = db.projects.find(p => p.id === q.projectId);
+  const profit = calcDocProfit(q, db);
+  const viewItems = withMasterInfo(q.items, db);
   return (
     <>
       <SheetHead title="見積書プレビュー" onClose={onClose} />
@@ -1652,14 +1684,24 @@ function QuoteViewSheet({ ctx, quote, onClose }) {
         <div className="card-sub" style={{ marginTop: 6 }}>見積番号: {q.quoteNo}　見積日: {fmtDate(q.date)}</div>
         <table>
           <tbody>
-            <tr><th>項目</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>
-            {q.items.map(it => <tr key={it.id}><td>{it.name}</td><td className="num">{it.qty}</td><td>{it.unit || ""}</td><td className="num">{fmtYen(it.unitPrice)}</td><td className="num">{fmtYen((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))}</td></tr>)}
+            <tr><th>項目</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th><th>下代</th><th>粗利</th></tr>
+            {viewItems.map(it => {
+              const baseCost = it._master ? (baseCostOf(it._master) || 0) : null;
+              const qty = Number(it.qty) || 0, unitPrice = Number(it.unitPrice) || 0;
+              return <tr key={it.id}>
+                <td>{it.name}</td><td className="num">{it.qty}</td><td>{it.unit || ""}</td>
+                <td className="num">{fmtYen(unitPrice)}</td><td className="num">{fmtYen(qty * unitPrice)}</td>
+                <td className="num" style={{ color: "var(--sub)" }}>{baseCost !== null ? fmtYen(baseCost) : "-"}</td>
+                <td className="num" style={{ color: "var(--orange)" }}>{baseCost !== null ? fmtYen((unitPrice - baseCost) * qty) : "-"}</td>
+              </tr>;
+            })}
           </tbody>
         </table>
         <div className="totals">
           <div className="totals-row"><span>小計</span><span>{fmtYen(q.subtotal)}</span></div>
           <div className="totals-row"><span>消費税(10%)</span><span>{fmtYen(q.tax)}</span></div>
           <div className="totals-row grand"><span>合計</span><span>{fmtYen(q.total)}</span></div>
+          {profit !== null && <div className="totals-row" style={{ color: "var(--orange)" }}><span>想定粗利</span><span>{fmtYen(profit.total)}</span></div>}
         </div>
         {q.notes && <div style={{ marginTop: 12, fontSize: 12.5, color: "var(--sub)", whiteSpace: "pre-wrap" }}>{q.notes}</div>}
       </div>
@@ -1763,6 +1805,8 @@ function InvoiceViewSheet({ ctx, invoice, onClose }) {
   if (!invoice) return <><SheetHead title="お知らせ" onClose={onClose} /><div>請求書がありません</div></>;
   const inv = db.invoices.find(x => x.id === invoice.id) || invoice;
   const project = db.projects.find(p => p.id === inv.projectId);
+  const profit = calcDocProfit(inv, db);
+  const viewItems = withMasterInfo(inv.items, db);
   function markPaid() {
     confirm(`「${inv.invoiceNo}」を入金済にしますか？`, () => {
       const d = draftOf(db);
@@ -1782,14 +1826,24 @@ function InvoiceViewSheet({ ctx, invoice, onClose }) {
         {inv.paidDate && <div className="badge 入金済" style={{ display: "inline-block", marginTop: 8 }}>入金済 {fmtDate(inv.paidDate)}</div>}
         <table>
           <tbody>
-            <tr><th>項目</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>
-            {inv.items.map(it => <tr key={it.id}><td>{it.name}</td><td className="num">{it.qty}</td><td>{it.unit || ""}</td><td className="num">{fmtYen(it.unitPrice)}</td><td className="num">{fmtYen((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))}</td></tr>)}
+            <tr><th>項目</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th><th>下代</th><th>粗利</th></tr>
+            {viewItems.map(it => {
+              const baseCost = it._master ? (baseCostOf(it._master) || 0) : null;
+              const qty = Number(it.qty) || 0, unitPrice = Number(it.unitPrice) || 0;
+              return <tr key={it.id}>
+                <td>{it.name}</td><td className="num">{it.qty}</td><td>{it.unit || ""}</td>
+                <td className="num">{fmtYen(unitPrice)}</td><td className="num">{fmtYen(qty * unitPrice)}</td>
+                <td className="num" style={{ color: "var(--sub)" }}>{baseCost !== null ? fmtYen(baseCost) : "-"}</td>
+                <td className="num" style={{ color: "var(--orange)" }}>{baseCost !== null ? fmtYen((unitPrice - baseCost) * qty) : "-"}</td>
+              </tr>;
+            })}
           </tbody>
         </table>
         <div className="totals">
           <div className="totals-row"><span>小計</span><span>{fmtYen(inv.subtotal)}</span></div>
           <div className="totals-row"><span>消費税(10%)</span><span>{fmtYen(inv.tax)}</span></div>
           <div className="totals-row grand"><span>合計</span><span>{fmtYen(inv.total)}</span></div>
+          {profit !== null && <div className="totals-row" style={{ color: "var(--orange)" }}><span>想定粗利</span><span>{fmtYen(profit.total)}</span></div>}
         </div>
         {inv.notes && <div style={{ marginTop: 12, fontSize: 12.5, color: "var(--sub)", whiteSpace: "pre-wrap" }}>{inv.notes}</div>}
       </div>
@@ -1818,12 +1872,13 @@ function MasterTab({ ctx, filter, setFilter }) {
   function MasterRow({ m, categoryLabel }) {
     const usedIn = findQuotesUsingItem(db, { masterId: m.id, name: m.name }).length;
     const costCount = (m.costEntries || []).length;
+    const baseEntry = (m.costEntries || []).find(e => e.id === m.baseCostEntryId);
     const cautionCount = (m.cautionNotes || []).length;
     return (
       <div className="master-row" onClick={() => open("masterItemEditor", { item: m })}>
         <div className="m-body">
           <div className="m-name">{m.name}</div>
-          <div className="m-sub">{categoryLabel ? `${categoryLabel}・` : ""}単位: {m.unit || "-"}{usedIn ? `・過去見積 ${usedIn}件` : ""}</div>
+          <div className="m-sub">{categoryLabel ? `${categoryLabel}・` : ""}単位: {m.unit || "-"}{usedIn ? `・過去見積 ${usedIn}件` : ""}{baseEntry ? `・基準下代 ${fmtYen(baseEntry.price)}` : ""}</div>
         </div>
         <div className="m-price">{fmtYen(m.unitPrice)}</div>
         <button className="btn secondary small cost-btn" onClick={e => { e.stopPropagation(); open("costInfo", { m }); }}>下代{costCount ? `（${costCount}）` : ""}</button>
@@ -2000,7 +2055,7 @@ function CategoryManagerSheet({ ctx, onClose }) {
 function MasterItemEditorSheet({ ctx, item, onSaved, onClose }) {
   const { db, save, confirm, notice, open } = ctx;
   const isNew = !item;
-  const m = item ? db.priceMaster.find(x => x.id === item.id) || item : { id: null, categoryId: (catChildren(db, null)[0] && catChildren(db, null)[0].id) || null, name: "", unit: "式", unitPrice: 0, useCount: 0, costEntries: [], cautionNotes: [], cautionHeader: "" };
+  const m = item ? db.priceMaster.find(x => x.id === item.id) || item : { id: null, categoryId: (catChildren(db, null)[0] && catChildren(db, null)[0].id) || null, name: "", unit: "式", unitPrice: 0, useCount: 0, costEntries: [], baseCostEntryId: null, cautionNotes: [], cautionHeader: "" };
   const usage = isNew ? [] : findQuotesUsingItem(db, { masterId: m.id, name: m.name });
   const [categoryId, setCategoryId] = useState(m.categoryId);
   const [newCatMode, setNewCatMode] = useState(false);
@@ -2122,20 +2177,27 @@ function CostInfoSheet({ ctx, m, onClose }) {
   const { db, save, confirm, open } = ctx;
   const cur = db.priceMaster.find(x => x.id === m.id) || m;
   const entries = (cur.costEntries || []).slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const baseEntry = entries.find(e => e.id === cur.baseCostEntryId) || null;
   let marginLine = null;
-  if (entries.length) {
-    const latest = entries[0];
-    if (Number(latest.price) > 0 && cur.unitPrice > 0) {
-      const margin = cur.unitPrice - Number(latest.price);
-      const marginPct = Math.round((margin / cur.unitPrice) * 100);
-      marginLine = <div className="card-sub" style={{ marginBottom: 10 }}>売価 {fmtYen(cur.unitPrice)} － 最新の下代 {fmtYen(latest.price)} ＝ 粗利 {fmtYen(margin)}（{marginPct}%）</div>;
-    }
+  if (baseEntry && Number(baseEntry.price) > 0 && cur.unitPrice > 0) {
+    const margin = cur.unitPrice - Number(baseEntry.price);
+    const marginPct = Math.round((margin / cur.unitPrice) * 100);
+    marginLine = <div className="card-sub" style={{ marginBottom: 10 }}>売価 {fmtYen(cur.unitPrice)} － 基準下代 {fmtYen(baseEntry.price)} ＝ 粗利 {fmtYen(margin)}（{marginPct}%）</div>;
+  } else if (entries.length) {
+    marginLine = <div className="card-sub" style={{ marginBottom: 10, color: "var(--sub)" }}>基準下代が未設定です。下の一覧から「基準にする」を選んでください。</div>;
+  }
+  function setBase(e) {
+    const d = draftOf(db);
+    const dm = d.priceMaster.find(x => x.id === m.id);
+    dm.baseCostEntryId = dm.baseCostEntryId === e.id ? null : e.id;
+    save(d);
   }
   function del(e) {
     confirm("この下代情報を削除しますか？", () => {
       const d = draftOf(db);
       const dm = d.priceMaster.find(x => x.id === m.id);
       dm.costEntries = (dm.costEntries || []).filter(x => x.id !== e.id);
+      if (dm.baseCostEntryId === e.id) dm.baseCostEntryId = null;
       save(d);
       ebDeleteFile(e.storagePath);
     });
@@ -2144,14 +2206,18 @@ function CostInfoSheet({ ctx, m, onClose }) {
     <>
       <SheetHead title="下代情報" onClose={onClose} />
       <div className="card-sub" style={{ marginBottom: 12 }}>{cur.name}（現在の売価: {fmtYen(cur.unitPrice)} / {cur.unit || ""}）</div>
-      {entries.length === 0 ? <div className="empty">下代情報はまだありません。<br />「＋ 下代情報を追加」から登録してください。</div> : <>
+      {entries.length === 0 ? <div className="empty">下代情報はまだありません。<br />「＋ 下代情報を追加」から登録してください。ファイルと金額はバラバラに何件でも追加できます。</div> : <>
         {marginLine}
         {entries.map(e => (
-          <div className="cost-entry" key={e.id}>
-            <div className="ce-top"><div className="ce-price">{fmtYen(e.price)}</div><button className="icon-btn danger" onClick={() => del(e)}>✕</button></div>
+          <div className="cost-entry" key={e.id} style={e.id === cur.baseCostEntryId ? { border: "2px solid var(--orange)" } : undefined}>
+            <div className="ce-top">
+              <div className="ce-price">{fmtYen(e.price)}{e.id === cur.baseCostEntryId && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--orange)", fontWeight: 700 }}>基準下代</span>}</div>
+              <button className="icon-btn danger" onClick={() => del(e)}>✕</button>
+            </div>
             <div className="ce-meta">{e.supplier ? `仕入先: ${e.supplier}　` : ""}{fmtDate(e.createdAt)}</div>
             {e.note && <div className="ce-note">{e.note}</div>}
             <FileEntryPreview e={e} />
+            <button className="btn secondary small" style={{ marginTop: 6 }} onClick={() => setBase(e)}>{e.id === cur.baseCostEntryId ? "基準を解除" : "基準にする"}</button>
           </div>
         ))}
       </>}

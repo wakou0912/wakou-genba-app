@@ -4,13 +4,14 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 /* ===================== 自社情報（設定） ===================== */
-const COMPANY_INFO = {
+export const COMPANY_INFO = {
   name: "株式会社ワコウ",
   zip: "332-0001",
   address1: "埼玉県川口市",
   address2: "朝日3-3-14",
   tel: "090-4704-4919",
   invoiceRegNo: "T90300001151723",
+  constructionRegNo: "1635826001",
   bank: {
     bankName: "青木信用金庫",
     branchName: "朝日支店",
@@ -228,6 +229,12 @@ const DEFAULT_CATEGORY_NAMES = ["シャッター本体", "部材・部品", "工
 
 function uid(p) { return p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
+function nextMonthEndISO(dateStr) {
+  if (!dateStr) return "";
+  const [y, m] = dateStr.split("-").map(Number);
+  const d = new Date(y, m + 1, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function fmtDate(d) { if (!d) return "-"; const [y, m, day] = d.split("-"); return `${y}/${m}/${day}`; }
 function fmtYen(n) { return "¥" + Math.round(Number(n) || 0).toLocaleString(); }
 
@@ -440,6 +447,7 @@ function buildDocPage(kind, doc, project, showPageHead) {
       <div class="bk-h">お振込み先</div>
       ${escapeHtml(COMPANY_INFO.bank.bankName)}　${escapeHtml(COMPANY_INFO.bank.branchName)}（店番 ${escapeHtml(COMPANY_INFO.bank.branchNo)}）　${escapeHtml(COMPANY_INFO.bank.accountType)}　${escapeHtml(COMPANY_INFO.bank.accountNo)}<br>
       口座名義：${escapeHtml(COMPANY_INFO.bank.accountHolder)}
+      <div style="margin-top:6px;">※誠に恐れ入りますが、振込手数料は貴社にてご負担くださいますようお願い申し上げます。</div>
     </div>` : "";
   const stampBlock = isInvoice ? stampHtml() : "";
 
@@ -478,7 +486,7 @@ function buildDocPage(kind, doc, project, showPageHead) {
       <div class="doc-bottom-grid">
         <div class="doc-notes">
           <div class="nt-h">備考</div>
-          ${escapeHtml(doc.notes || "")}
+          ${[...(isInvoice && doc.dueDate ? [`お支払い期限：${fmtDate(doc.dueDate)}`] : []), ...(doc.notes ? escapeHtml(doc.notes).split("\n") : [])].join("<br>")}
         </div>
         <div class="doc-totals">
           <div class="t-row"><span>税抜合計</span><span>${fmtYen(doc.subtotal)}</span></div>
@@ -1705,7 +1713,8 @@ function InvoiceEditorSheet({ ctx, invoice, projectId, onClose }) {
   const project = db.projects.find(p => p.id === projectId);
   const base = invoice ? db.invoices.find(x => x.id === invoice.id) || invoice : (() => {
     const q = getQuoteForProject(db, projectId, true);
-    return { id: null, projectId, invoiceNo: null, date: todayISO(), dueDate: "", items: q ? q.items.map(it => ({ ...it, id: uid("it") })) : [blankItem()], notes: q ? q.notes : "", quoteId: q ? q.id : null, paidDate: null };
+    const d0 = todayISO();
+    return { id: null, projectId, invoiceNo: null, date: d0, dueDate: nextMonthEndISO(d0), items: q ? q.items.map(it => ({ ...it, id: uid("it") })) : [blankItem()], notes: q ? q.notes : "", quoteId: q ? q.id : null, paidDate: null };
   })();
   const [date, setDate] = useState(base.date);
   const [dueDate, setDueDate] = useState(base.dueDate || "");

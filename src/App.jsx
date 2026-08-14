@@ -4746,7 +4746,10 @@ export default function App() {
       }
       setSynced(true);
     }, ()=>setSynced(true));
-    return unsub;
+    // バックグラウンドタブ復帰やモバイル回線切替時にFirestoreの接続がなかなか繋がらず
+    // 「読み込み中」のまま固まることがあるため、一定時間で諦めてローカルキャッシュのdbで進める
+    const timeoutId = setTimeout(()=>setSynced(true), 6000);
+    return ()=>{ unsub(); clearTimeout(timeoutId); };
   },[]);
 
   useEffect(()=>{

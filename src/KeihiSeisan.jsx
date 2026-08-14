@@ -267,10 +267,16 @@ function ReceiptRow({receipt,locked,onUpdate,onDelete,onPhotoPreview}) {
 }
 
 // ─── KeihiCard ───
-function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,onBulkCamera,onPhotoPreview}) {
+function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,onBulkCamera,onBulkDrop,onPhotoPreview}) {
   const sorted = sortByDate(card.receipts||[]);
   const sub = cardSubtotal(card);
   const dupIds = findDupIds(card);
+  const [dragOver,setDragOver]=useState(false);
+  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();setDragOver(over);};}
+  function handleDrop(e){
+    e.preventDefault();e.stopPropagation();setDragOver(false);
+    if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)onBulkDrop(card.id,e.dataTransfer.files);
+  }
   return (
     <div style={{background:"white",borderRadius:10,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 14px",borderBottom:"1px solid #EEF1F6"}}>
@@ -299,7 +305,9 @@ function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,on
       {!locked&&(
         <div style={{display:"flex",gap:8,margin:"8px 14px 12px"}}>
           <button onClick={()=>onAddR(card.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:9,background:"#E8F4FF",border:"1.5px dashed #4A90D9",borderRadius:8,color:"#1A6BB5",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ レシートを追加</button>
-          <button onClick={()=>onBulkCamera(card.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:9,background:"#FFF3E0",border:"1.5px dashed #FFB74D",borderRadius:8,color:ORANGE,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📷 まとめて撮影(AI)</button>
+          <button onClick={()=>onBulkCamera(card.id)}
+            onDragEnter={handleDrag(true)} onDragOver={handleDrag(true)} onDragLeave={handleDrag(false)} onDragEnd={handleDrag(false)} onDrop={handleDrop}
+            style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:9,background:dragOver?"#FFE0B2":"#FFF3E0",border:`1.5px dashed ${dragOver?ORANGE:"#FFB74D"}`,borderRadius:8,color:ORANGE,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📷 まとめて撮影(AI)<span style={{fontWeight:400,fontSize:10}}>／ドロップ可</span></button>
         </div>
       )}
     </div>
@@ -374,6 +382,14 @@ function WorkerKeihi({userName}) {
   }
 
   function handleBulkCamera(cardId){bulkCardId.current=cardId;fileRef.current.value="";fileRef.current.click();}
+  function handleBulkDrop(cardId,files){
+    if(!files||!files.length)return;
+    bulkCardId.current=cardId;
+    const dt=new DataTransfer();
+    Array.from(files).forEach(f=>dt.items.add(f));
+    fileRef.current.files=dt.files;
+    fileRef.current.dispatchEvent(new Event("change",{bubbles:true}));
+  }
   async function onBulkChange(e){
     const files=Array.from(e.target.files||[]);
     if(!files.length||!bulkCardId.current)return;
@@ -448,7 +464,7 @@ function WorkerKeihi({userName}) {
           {cards.map((card,i)=>(
             <KeihiCard key={card.id} card={card} locked={submitted} index={i}
               onUpdateR={updateReceipt} onDeleteR={deleteReceipt} onAddR={addReceipt}
-              onDeleteCard={deleteCard} onBulkCamera={handleBulkCamera} onPhotoPreview={setPhotoSrc}
+              onDeleteCard={deleteCard} onBulkCamera={handleBulkCamera} onBulkDrop={handleBulkDrop} onPhotoPreview={setPhotoSrc}
             />
           ))}
         </div>

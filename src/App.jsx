@@ -496,6 +496,27 @@ function Stat({label,value,color="#cfd8dc"}) {
 function DRow({label,value,color="#546e7a",big}) {
   return <div style={{display:"flex",justifyContent:"space-between",fontSize:big?13:11}}><span style={{color:"#263238"}}>{label}</span><span style={{color,fontWeight:big?800:600}}>{value}</span></div>;
 }
+// ファイルのドラッグ＆ドロップ：子要素にドロップされたファイルを inputRef の input にセットして change を発火する
+function FileDropZone({inputRef,disabled,children,style}) {
+  const [dragOver,setDragOver]=useState(false);
+  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();if(!disabled)setDragOver(over);};}
+  function handleDrop(e){
+    e.preventDefault();e.stopPropagation();setDragOver(false);
+    if(disabled||!inputRef.current)return;
+    const files=e.dataTransfer&&e.dataTransfer.files;
+    if(!files||!files.length)return;
+    const dt=new DataTransfer();
+    Array.from(files).forEach(f=>dt.items.add(f));
+    inputRef.current.files=dt.files;
+    inputRef.current.dispatchEvent(new Event("change",{bubbles:true}));
+  }
+  return (
+    <div onDragEnter={handleDrag(true)} onDragOver={handleDrag(true)} onDragLeave={handleDrag(false)} onDragEnd={handleDrag(false)} onDrop={handleDrop}
+      style={{...style,...(dragOver?{borderColor:"#4fc3f7",background:"#0a1a24"}:{})}}>
+      {children}
+    </div>
+  );
+}
 
 // ─── ドラッグ&ドロップ カードリスト（PC） ───────────
 function DraggableList({rows, renderCard, onReorder}) {
@@ -1472,7 +1493,7 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
 
       {/* 投稿UI */}
       {canPost && selectedName && (
-        <div style={{padding:"10px 14px",borderBottom:"1px solid #1a2634",background:"#080e14"}}>
+        <FileDropZone inputRef={fileInputRef} disabled={uploading} style={{padding:"10px 14px",borderBottom:"1px solid #1a2634",background:"#080e14"}}>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
             <span style={{color:"#4fc3f7",fontSize:11,fontWeight:700}}>{selectedName}</span>
             <span onClick={()=>{setSelectedName("");setNewPostText("");setPendingFile(null);}} style={{color:"#37474f",fontSize:10,cursor:"pointer"}}>✕ 変更</span>
@@ -1497,7 +1518,7 @@ function LoginInfoShare({db, onSave, extraCoworkers=[]}) {
           </div>
           <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{display:"none"}}
             onChange={e=>{const f=e.target.files?.[0];if(f)setPendingFile(f);e.target.value="";}}/>
-        </div>
+        </FileDropZone>
       )}
 
       <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>
@@ -4618,7 +4639,7 @@ function InfoShareView({ db, setDb, isAdmin, userName }) {
 
       {/* 投稿フォーム */}
       {(currentId !== null) && canPost && (
-        <div style={{ background: "#0a1018", border: "1px solid #1a2634", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+        <FileDropZone inputRef={fileInputRef} disabled={uploading} style={{ background: "#0a1018", border: "1px solid #1a2634", borderRadius: 8, padding: 12, marginBottom: 14 }}>
           <textarea value={newPostText} onChange={e => setNewPostText(e.target.value)}
             placeholder="テキストを入力（任意）..." rows={3}
             style={{ width: "100%", background: "#080e14", border: "1px solid #1a2634", borderRadius: 6, padding: "8px 10px", color: "#cfd8dc", fontSize: 13, fontFamily: "inherit", resize: "vertical", marginBottom: 8 }} />
@@ -4640,7 +4661,7 @@ function InfoShareView({ db, setDb, isAdmin, userName }) {
             <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{ display: "none" }}
               onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = ""; }} />
           </div>
-        </div>
+        </FileDropZone>
       )}
 
       {/* 名前変更モーダル */}

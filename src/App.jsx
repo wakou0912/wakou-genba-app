@@ -3001,7 +3001,7 @@ ${pdfCols.ake?`<td></td>`:""}
         {[["list","📋 一覧"],["dashboard","📊 ダッシュボード"],["filter","🔍 フィルター"],["inspection","📋 点検集計"],["best","🏆 ベスト日報"],["info","📂 情報共有"],["holiday","🗓️ 祝日編集"],["master","⚙️ 営業編集"],["targets","💰 月目標"],["prices","💰 単価編集"],["datamanage","🗄️ データ管理"],["keihi","💴 経費管理"],["estimate","📄 見積・請求"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{padding:"11px 16px",border:"none",background:"transparent",color:tab===key?"#4fc3f7":"#37474f",fontWeight:tab===key?700:400,fontSize:13,cursor:"pointer",borderBottom:tab===key?"2px solid #4fc3f7":"2px solid transparent",fontFamily:"inherit"}}>{label}</button>
         ))}
-        <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center"}}>
+        <div style={{marginLeft:"auto",display:"flex",gap:8,padding:"8px 0",alignItems:"center",flexWrap:"wrap"}}>
           <select value={filterWorker} onChange={e=>setFilterWorker(e.target.value)} style={selA}><option>全員</option>{WORKERS.map(w=><option key={w}>{w}</option>)}</select>
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={selA}>{months.map(m=><option key={m}>{m}</option>)}</select>
           {tab==="list"&&<button onClick={exportCSV} style={{...btnBase,background:"#0a1f0a",color:"#a5d6a7",border:"1px solid #1a3a1a"}}>📥 CSV出力</button>}

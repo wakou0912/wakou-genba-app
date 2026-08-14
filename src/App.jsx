@@ -499,7 +499,7 @@ function DRow({label,value,color="#546e7a",big}) {
 // ファイルのドラッグ＆ドロップ：子要素にドロップされたファイルを inputRef の input にセットして change を発火する
 function FileDropZone({inputRef,disabled,children,style}) {
   const [dragOver,setDragOver]=useState(false);
-  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();if(!disabled)setDragOver(over);};}
+  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect="copy";if(!disabled)setDragOver(over);};}
   function handleDrop(e){
     e.preventDefault();e.stopPropagation();setDragOver(false);
     if(disabled||!inputRef.current)return;

@@ -725,7 +725,11 @@ function Field({ label, children }) { return <><label>{label}</label>{children}<
 function FileDropZone({ inputRef, disabled, children }) {
   const [dragOver, setDragOver] = useState(false);
   function handleDrag(over) {
-    return e => { e.preventDefault(); e.stopPropagation(); if (!disabled) setDragOver(over); };
+    return e => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      if (!disabled) setDragOver(over);
+    };
   }
   function handleDrop(e) {
     e.preventDefault(); e.stopPropagation();
@@ -1007,7 +1011,7 @@ function ProjectCard({ ctx, p }) {
         {p.status === "依頼" && <button className="btn small" onClick={newQuote}>見積作成</button>}
         {p.status === "見積提出" && <><button className="btn secondary small" onClick={viewQuote}>見積を見る</button><button className="btn small" onClick={markJuchu}>受注にする</button></>}
         {p.status === "受注" && <><button className="btn secondary small" onClick={viewQuote}>見積を見る</button><button className="btn small" onClick={() => open("scheduleEditor", { projectId: p.id })}>工程表を作成</button></>}
-        {p.status === "工程" && <><button className="btn secondary small" onClick={() => open("scheduleView", { projectId: p.id })}>工程表を見る</button><button className="btn small" onClick={() => open("invoiceEditor", { invoice: null, projectId: p.id })}>請求書作成</button></>}
+        {p.status === "工程" && <><button className="btn secondary small" onClick={() => open("scheduleView", { projectId: p.id })}>工程表を見る</button><button className="btn small" onClick={() => open("invoiceEditor", { invoice: inv, projectId: p.id })}>請求書作成</button></>}
         {p.status === "請求" && <><button className="btn secondary small" onClick={viewInvoice}>請求書を見る</button><button className="btn small" onClick={markPaid}>入金済にする</button></>}
         {p.status === "入金済" && <button className="btn secondary small" onClick={viewInvoice}>請求書を見る</button>}
         {(p.status === "請求" || p.status === "入金済") && scheduleLocCount > 0 && <button className="btn ghost small" onClick={() => open("scheduleView", { projectId: p.id })}>工程表</button>}

@@ -272,7 +272,7 @@ function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,on
   const sub = cardSubtotal(card);
   const dupIds = findDupIds(card);
   const [dragOver,setDragOver]=useState(false);
-  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();setDragOver(over);};}
+  function handleDrag(over){return e=>{e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect="copy";setDragOver(over);};}
   function handleDrop(e){
     e.preventDefault();e.stopPropagation();setDragOver(false);
     if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)onBulkDrop(card.id,e.dataTransfer.files);

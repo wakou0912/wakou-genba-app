@@ -145,6 +145,18 @@ const EB_APP_CSS = `  .eb-root{
   .attach-item .attach-link{font-size:12.5px;color:var(--navy);font-weight:700;text-decoration:none;display:block;margin-bottom:6px;}
   .attach-item .attach-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--sub);}
 
+  .file-drop{border:2px dashed var(--line);border-radius:10px;padding:14px 10px;text-align:center;background:var(--bg);transition:background .15s,border-color .15s;}
+  .file-drop.drag-over{background:#fff4e8;border-color:var(--orange);}
+  .file-drop .fd-hint{font-size:11.5px;color:var(--sub);margin-bottom:8px;}
+  .file-drop input[type="file"]{width:100%;}
+
+  #mobilePrintArea{display:none;}
+  @media print{
+    body > *:not(#mobilePrintArea){ visibility:hidden; }
+    #mobilePrintArea, #mobilePrintArea *{ visibility:visible; }
+    #mobilePrintArea:not(:empty){ display:block; position:absolute; top:0; left:0; width:100%; margin:0; }
+    @page{ size:A4; margin:0; }
+  }
 `;
 const EB_PRINT_CSS = `  .doc-page{
     width:190mm;margin:0 auto;padding:14mm 14mm 10mm;
@@ -551,6 +563,10 @@ function buildInstructionPage(project, quote, showPageHead) {
     </div>`;
 }
 const SINGLE_PAGE_MAX_ITEMS = 16;
+function isMobileDevice() {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+/* PC：他の画面要素の影響を受けないよう、帳票の中身だけを入れた真っ新な別ウィンドウで印刷する */
 function printInIsolatedWindow(innerHtml, title, landscape) {
   const win = window.open("", "_blank");
   if (!win) { window.alert("印刷用ウィンドウを開けませんでした。ブラウザのポップアップブロックを確認してください。"); return; }
@@ -565,6 +581,30 @@ function printInIsolatedWindow(innerHtml, title, landscape) {
   if (win.document.readyState === "complete") doPrint();
   else win.addEventListener("load", doPrint);
 }
+/* スマホ：別タブを開くと印刷後にアプリへ戻れず強制終了するしかなくなるため、同一タブ内で印刷する */
+function printInline(innerHtml, title, landscape) {
+  let area = document.getElementById("mobilePrintArea");
+  if (!area) {
+    area = document.createElement("div");
+    area.id = "mobilePrintArea";
+    document.body.appendChild(area);
+  }
+  const pageStyle = `<style>${EB_PRINT_CSS}</style><style>@media print{ @page{ size:${landscape ? "A4 landscape" : "A4"}; margin:${landscape ? "8mm" : "0"}; } }</style>`;
+  area.innerHTML = pageStyle + innerHtml;
+  const prevTitle = document.title;
+  document.title = title;
+  const cleanup = () => {
+    area.innerHTML = "";
+    document.title = prevTitle;
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => { window.print(); }, 50);
+}
+function printOutput(innerHtml, title, landscape) {
+  if (isMobileDevice()) printInline(innerHtml, title, landscape);
+  else printInIsolatedWindow(innerHtml, title, landscape);
+}
 function printDocumentReal(kind, doc, project) {
   const multiPage = (doc.items || []).length > SINGLE_PAGE_MAX_ITEMS;
   const html = buildDocPage(kind, doc, project, multiPage);
@@ -572,13 +612,13 @@ function printDocumentReal(kind, doc, project) {
   const no = kind === "invoice" ? doc.invoiceNo : doc.quoteNo;
   const siteName = project ? project.siteName : "";
   const title = `${kindLabel}_${sanitizeFilename(siteName)}_${sanitizeFilename(no)}`;
-  printInIsolatedWindow(html, title);
+  printOutput(html, title);
 }
 function printInstructionReal(project, quote) {
   const multiPage = quote ? (quote.items || []).length > SINGLE_PAGE_MAX_ITEMS : false;
   const html = buildInstructionPage(project, quote, multiPage);
   const title = `指示書_${sanitizeFilename(project.siteName)}`;
-  printInIsolatedWindow(html, title);
+  printOutput(html, title);
 }
 
 /* 工程表（ガントチャート）のHTML組み立て。画面表示・印刷どちらからも呼ぶ */
@@ -667,7 +707,7 @@ function buildSchedulePage(project, schedule) {
 function printScheduleReal(project, schedule) {
   const html = buildSchedulePage(project, schedule);
   const title = `工程表_${sanitizeFilename(project.siteName)}`;
-  printInIsolatedWindow(html, title, true);
+  printOutput(html, title, true);
 }
 
 /* ===================== 小さな共通UI ===================== */
@@ -682,6 +722,29 @@ function SheetHead({ title, onClose }) {
   return <div className="sheet-head"><h2>{title}</h2><button className="close-x" onClick={onClose}>×</button></div>;
 }
 function Field({ label, children }) { return <><label>{label}</label>{children}</>; }
+function FileDropZone({ inputRef, disabled, children }) {
+  const [dragOver, setDragOver] = useState(false);
+  function handleDrag(over) {
+    return e => { e.preventDefault(); e.stopPropagation(); if (!disabled) setDragOver(over); };
+  }
+  function handleDrop(e) {
+    e.preventDefault(); e.stopPropagation();
+    setDragOver(false);
+    if (disabled || !inputRef.current) return;
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    const dt = new DataTransfer();
+    Array.from(files).forEach(f => dt.items.add(f));
+    inputRef.current.files = dt.files;
+    inputRef.current.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  return (
+    <div className={`file-drop${dragOver ? " drag-over" : ""}`} onDragEnter={handleDrag(true)} onDragOver={handleDrag(true)} onDragLeave={handleDrag(false)} onDragEnd={handleDrag(false)} onDrop={handleDrop}>
+      <div className="fd-hint">タップして選択、またはドラッグ＆ドロップ</div>
+      {children}
+    </div>
+  );
+}
 
 /* ===================== 明細エディタ（見積・請求共通） ===================== */
 function ItemsEditor({ items, setItems }) {
@@ -1159,7 +1222,9 @@ function ProjectEditorSheet({ ctx, project, onClose }) {
                 </div>
               ))}
           </div>
-          <input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} onChange={handleFileChange} />
+          <FileDropZone inputRef={fileRef} disabled={uploading}>
+            <input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} onChange={handleFileChange} />
+          </FileDropZone>
         </Field>
         <button className="btn secondary" style={{ width: "100%", marginTop: 16 }} onClick={handleInstruction}>指示書として出す</button>
       </>}
@@ -2257,7 +2322,11 @@ function CostEntryFormSheet({ ctx, m, onSaved, onClose }) {
       <Field label="下代単価"><input type="number" min="0" placeholder="例）6000" value={price} onChange={e => setPrice(e.target.value)} /></Field>
       <Field label="仕入先（任意）"><input type="text" placeholder="例）〇〇建材" value={supplier} onChange={e => setSupplier(e.target.value)} /></Field>
       <Field label="メモ（任意）"><textarea placeholder="ロット条件、値上げ情報など" value={note} onChange={e => setNote(e.target.value)} /></Field>
-      <Field label="ファイル添付（任意・見積書の写真など）"><input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} /></Field>
+      <Field label="ファイル添付（任意・見積書の写真など）">
+        <FileDropZone inputRef={fileRef} disabled={uploading}>
+          <input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} />
+        </FileDropZone>
+      </Field>
       <div className="sheet-footer">
         <button className="btn secondary" onClick={onClose}>キャンセル</button>
         <button className="btn" disabled={uploading} onClick={handleSave}>{uploading ? "保存中…" : "保存"}</button>
@@ -2341,7 +2410,9 @@ function CautionEntryFormSheet({ ctx, m, onSaved, existingEntry, onClose }) {
       <Field label="内容"><textarea placeholder="施工上の注意点、過去のトラブル、取扱い上の注意など" value={note} onChange={e => setNote(e.target.value)} /></Field>
       <Field label="ファイル添付（任意・現場写真など）">
         {isEdit && existingEntry.fileUrl && <><FileEntryPreview e={existingEntry} /><div className="card-sub" style={{ marginBottom: 6 }}>↑現在の添付ファイル。差し替える場合だけ下から選んでください。</div></>}
-        <input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} />
+        <FileDropZone inputRef={fileRef} disabled={uploading}>
+          <input ref={fileRef} type="file" accept="image/*,.pdf" disabled={uploading} />
+        </FileDropZone>
       </Field>
       <div className="sheet-footer">
         <button className="btn secondary" onClick={onClose}>キャンセル</button>

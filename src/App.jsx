@@ -78,16 +78,33 @@ function calcExtraTotal(row){
 function calcSonotaTotal(row){
   return (row?.sonotaCharges||[]).reduce((s,e)=>s+(parseInt(e.amount)||0),0);
 }
+const BOKA_MIN_CHARGE = 23000;
+function applyBokaMin(amt,row){
+  const hasBoka=(row?.inspectionTypes||[]).includes("防火設備点検");
+  const mult=row?.calcMult||"なし";
+  if(hasBoka&&mult!=="なし"&&amt>0&&amt<BOKA_MIN_CHARGE) return {raw:amt, amt:BOKA_MIN_CHARGE, bumped:true};
+  return {raw:amt, amt, bumped:false};
+}
+function calcKanrihiSplit(row,kanrihi){
+  const kOwn=parseInt(row?.kanrihiOwn)||0, kOther=parseInt(row?.kanrihiOther)||0;
+  const kTotal=kOwn+kOther;
+  if(kTotal===0) return {kanrihiOwnAmt:kanrihi, kanrihiOtherAmt:0}; // 未入力時は自社が全額受け取る
+  const kanrihiOwnAmt=Math.floor(kanrihi*kOwn/kTotal);
+  return {kanrihiOwnAmt, kanrihiOtherAmt:kanrihi-kanrihiOwnAmt};
+}
 function calcOwnOtherSplit(row,inspTotal){
   const n7own=parseInt(row?.count7)||0, n3own=parseInt(row?.count3)||0;
   const n7other=parseInt(row?.count7other)||0, n3other=parseInt(row?.count3other)||0;
   const n7=n7own+n7other, n3=n3own+n3other;
   const totalParts=7*n7+3*n3;
   const extraTotal=calcExtraTotal(row);
-  if(totalParts===0) return {ownTotal:inspTotal+extraTotal, otherTotal:0};
-  const amt7=n7>0?Math.floor(inspTotal*7/totalParts):0;
-  const amt3=n3>0?Math.floor(inspTotal*3/totalParts):0;
-  return {ownTotal:amt7*n7own+amt3*n3own+extraTotal, otherTotal:amt7*n7other+amt3*n3other};
+  const kanrihi=(row?.inspectionTypes||[]).includes("防火設備点検")?calcBokaKanrihi(row):0;
+  const splitBase=inspTotal-kanrihi; // 管理費は点検按分と分けて自社/他社の人数比で按分する
+  const {kanrihiOwnAmt,kanrihiOtherAmt}=calcKanrihiSplit(row,kanrihi);
+  if(totalParts===0) return {ownTotal:splitBase+extraTotal+kanrihiOwnAmt, otherTotal:kanrihiOtherAmt, kanrihiOwnAmt, kanrihiOtherAmt};
+  const amt7=applyBokaMin(n7>0?Math.floor(splitBase*7/totalParts):0,row).amt;
+  const amt3=applyBokaMin(n3>0?Math.floor(splitBase*3/totalParts):0,row).amt;
+  return {ownTotal:amt7*n7own+amt3*n3own+extraTotal+kanrihiOwnAmt, otherTotal:amt7*n7other+amt3*n3other+kanrihiOtherAmt, kanrihiOwnAmt, kanrihiOtherAmt};
 }
 function calcBokaBreakdown(form,mult,P={}){
   const dO=+form.doorAnytime||0,dC=+form.doorAlwaysClose||0;
@@ -187,6 +204,40 @@ function buildAmountFormulaHtml(row,mult,P){
     (sec.kanrihiItems||[]).forEach(it=>{ html+=`${it.label}: ${it.qty}台×¥${it.unitPrice.toLocaleString()}=¥${it.subtotal.toLocaleString()}<br>`; });
     html+=`小計 ¥${sec.total.toLocaleString()}<br>`;
   });
+  html+=`</div>`;
+  return html;
+}
+function buildRatioHtml(row,inspTotal,extraTotal=0){
+  if(!row) return "";
+  const n7own=parseInt(row.count7)||0, n3own=parseInt(row.count3)||0;
+  const n7other=parseInt(row.count7other)||0, n3other=parseInt(row.count3other)||0;
+  const n7=n7own+n7other, n3=n3own+n3other;
+  const totalParts=7*n7+3*n3;
+  if(totalParts===0) return "";
+  const kanrihi=(row.inspectionTypes||[]).includes("防火設備点検")?calcBokaKanrihi(row):0;
+  const splitBase=inspTotal-kanrihi;
+  const amt7raw=n7>0?Math.floor(splitBase*7/totalParts):0;
+  const amt3raw=n3>0?Math.floor(splitBase*3/totalParts):0;
+  const {amt:amt7,raw:amt7Raw,bumped:amt7Bumped}=applyBokaMin(amt7raw,row);
+  const {amt:amt3,raw:amt3Raw,bumped:amt3Bumped}=applyBokaMin(amt3raw,row);
+  const {kanrihiOwnAmt,kanrihiOtherAmt}=calcKanrihiSplit(row,kanrihi);
+  const fmtAmt=(amt,raw,bumped)=>bumped?`<s style="color:#999;">¥${raw.toLocaleString()}</s> <b style="color:#c62828;">¥${amt.toLocaleString()}/人（最低金額）</b>`:`¥${amt.toLocaleString()}/人`;
+  let html=`<div style="font-size:11px;color:#333;margin:6px 0;line-height:1.8;">`;
+  html+=`<div style="font-weight:bold;color:#555;">👥 割合計算</div>`;
+  if(n7own>0) html+=`自社7割 ${n7own}人 × ${fmtAmt(amt7,amt7Raw,amt7Bumped)}<br>`;
+  if(n3own>0) html+=`自社3割 ${n3own}人 × ${fmtAmt(amt3,amt3Raw,amt3Bumped)}<br>`;
+  if(n7other>0) html+=`他社7割 ${n7other}人 × ${fmtAmt(amt7,amt7Raw,amt7Bumped)}<br>`;
+  if(n3other>0) html+=`他社3割 ${n3other}人 × ${fmtAmt(amt3,amt3Raw,amt3Bumped)}<br>`;
+  if(kanrihi>0) html+=`管理費: 自社¥${kanrihiOwnAmt.toLocaleString()}${kanrihiOtherAmt>0?`／他社¥${kanrihiOtherAmt.toLocaleString()}`:""}<br>`;
+  const ownPointTotal=amt7*n7own+amt3*n3own;
+  const otherTotal=amt7*n7other+amt3*n3other+kanrihiOtherAmt;
+  const ownTotal=ownPointTotal+extraTotal+kanrihiOwnAmt;
+  const ownParts=[];
+  if(ownPointTotal>0) ownParts.push(`点検按分 ¥${ownPointTotal.toLocaleString()}`);
+  if(extraTotal>0) ownParts.push(`追加金額 ¥${extraTotal.toLocaleString()}`);
+  if(kanrihiOwnAmt>0) ownParts.push(`管理費 ¥${kanrihiOwnAmt.toLocaleString()}`);
+  if(ownParts.length) html+=`<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #ccc;color:#1a237e;font-weight:bold;">自社合計 = ${ownParts.join(" ＋ ")} = ¥${ownTotal.toLocaleString()}</div>`;
+  if(otherTotal>0) html+=`<div style="color:#e65100;font-weight:bold;">他社合計 ¥${otherTotal.toLocaleString()}</div>`;
   html+=`</div>`;
   return html;
 }
@@ -666,6 +717,8 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
   const count3 = form.count3||"";
   const count7other = form.count7other||"";
   const count3other = form.count3other||"";
+  const kanrihiOwn = form.kanrihiOwn||"";
+  const kanrihiOther = form.kanrihiOther||"";
   const addCoworker = (name) => { const n=name.trim(); if(!n)return; if(!(form.coworkers||[]).includes(n)) set("coworkers",[...(form.coworkers||[]),n]); setCoworkerInput(""); };
   const removeCoworker = (name) => set("coworkers",(form.coworkers||[]).filter(w=>w!==name));
 
@@ -676,7 +729,7 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
       if(SYNC_PREFIXES.some(p=>k===p||k.startsWith(p+'S')||k.startsWith(p+'_')||k.startsWith(p+'d')||k.startsWith(p+'P')||k.startsWith(p+'B')||k.startsWith(p+'M')||k===p)) d[k]=f[k];
     });
     // 明示的にカバー
-    ['count7','count3','count7other','count3other','calcMult','subjects','inspectionTypes'].forEach(k=>{ d[k]=f[k]||''; });
+    ['count7','count3','count7other','count3other','kanrihiOwn','kanrihiOther','calcMult','subjects','inspectionTypes'].forEach(k=>{ d[k]=f[k]||''; });
     Object.keys(f).filter(k=>k.startsWith('boka')||k.startsWith('sogo')||k.startsWith('teiki')||k.startsWith('door')).forEach(k=>{d[k]=f[k];});
     return d;
   };
@@ -922,17 +975,23 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                             <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>🧮 防火設備点検</span>
                             <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBoka(form,calcMult,prices||{}).toLocaleString()}</span>
                           </div>
-                          <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
-                              display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>📋 管理費</span>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{calcBokaKanrihi(form).toLocaleString()}</span>
-                              {calcBokaKanrihi(form)>0&&<button onClick={()=>set("yotei",String((parseInt(form.yotei)||0)+calcBokaKanrihi(form)))}
-                                style={{padding:"4px 10px",borderRadius:6,border:"1px solid #ffd54f",background:"transparent",color:"#ffd54f",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                                予定金額に足す
-                              </button>}
-                            </div>
-                          </div>
+                          {(()=>{
+                            const kanrihiTotal=calcBokaKanrihi(form);
+                            const {kanrihiOwnAmt}=calcKanrihiSplit(form,kanrihiTotal);
+                            return(
+                              <div style={{padding:"8px 12px",borderRadius:7,border:"1px solid #1e4a5a",background:"#0d2030",
+                                  display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                                <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>📋 管理費{kanrihiOwnAmt!==kanrihiTotal?`（自社¥${kanrihiOwnAmt.toLocaleString()}）`:""}</span>
+                                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                  <span style={{color:"#ffd54f",fontWeight:900,fontSize:15}}>¥{kanrihiTotal.toLocaleString()}</span>
+                                  {kanrihiOwnAmt>0&&<button onClick={()=>set("yotei",String((parseInt(form.yotei)||0)+kanrihiOwnAmt))}
+                                    style={{padding:"4px 10px",borderRadius:6,border:"1px solid #ffd54f",background:"transparent",color:"#ffd54f",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                                    自社分を予定金額に足す
+                                  </button>}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </>
                       )}
                       {(form.inspectionTypes||[]).includes("総合点検")&&(
@@ -1020,16 +1079,19 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                     const n3other=parseInt(count3other)||0;
                     const n7=n7own+n7other, n3=n3own+n3other;
                     const totalParts=7*n7+3*n3;
-                    const amt7=totalParts>0&&n7>0?Math.floor(inspTotal*7/totalParts):0;
-                    const amt3=totalParts>0&&n3>0?Math.floor(inspTotal*3/totalParts):0;
+                    const amt7raw=totalParts>0&&n7>0?Math.floor(inspTotal*7/totalParts):0;
+                    const amt3raw=totalParts>0&&n3>0?Math.floor(inspTotal*3/totalParts):0;
+                    const {amt:amt7,raw:amt7Raw,bumped:amt7Bumped}=applyBokaMin(amt7raw,form);
+                    const {amt:amt3,raw:amt3Raw,bumped:amt3Bumped}=applyBokaMin(amt3raw,form);
                     const ownTotal=amt7*n7own+amt3*n3own+extraTotal;
                     const otherTotal=amt7*n7other+amt3*n3other;
-                    const Row=({label,field,val,amt})=>(
+                    const Row=({label,field,val,amt,raw,bumped})=>(
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:64}}>{label}</span>
                         <input type="text" inputMode="numeric" value={val} onChange={e=>{if(!e.nativeEvent.isComposing)set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
                         <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                        {amt>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人</span>}
+                        {bumped&&<span style={{color:"#78909c",fontSize:12,textDecoration:"line-through"}}>¥{raw.toLocaleString()}</span>}
+                        {amt>0&&<span style={{color:bumped?"#ef9a9a":"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人{bumped?"（最低金額）":""}</span>}
                         {amt>0&&<button onClick={()=>set("yotei",String(amt))}
                           style={{padding:"4px 10px",borderRadius:6,border:"1px solid #a5d6a7",background:"transparent",color:"#a5d6a7",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                           予定金額に反映
@@ -1040,10 +1102,10 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                       <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffd54f20"}}>
                         <div style={{color:"#ffd54f",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算（点検金額 ¥{inspTotal.toLocaleString()}{extraTotal>0?`　＋ 自社追加 ¥${extraTotal.toLocaleString()}`:""}）</div>
                         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                          <Row label="自社7割" field="count7" val={count7} amt={amt7}/>
-                          <Row label="自社3割" field="count3" val={count3} amt={amt3}/>
-                          <Row label="他社7割" field="count7other" val={count7other} amt={amt7}/>
-                          <Row label="他社3割" field="count3other" val={count3other} amt={amt3}/>
+                          <Row label="自社7割" field="count7" val={count7} amt={amt7} raw={amt7Raw} bumped={amt7Bumped}/>
+                          <Row label="自社3割" field="count3" val={count3} amt={amt3} raw={amt3Raw} bumped={amt3Bumped}/>
+                          <Row label="他社7割" field="count7other" val={count7other} amt={amt7} raw={amt7Raw} bumped={amt7Bumped}/>
+                          <Row label="他社3割" field="count3other" val={count3other} amt={amt3} raw={amt3Raw} bumped={amt3Bumped}/>
                           {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
                           {(ownTotal>0||otherTotal>0)&&(
                             <div style={{display:"flex",gap:14,marginTop:2}}>
@@ -1052,6 +1114,33 @@ function EditModal({row, role, sections, prices, onSave, onDelete, onDuplicate, 
                             </div>
                           )}
                           {calcSonotaTotal(form)>0&&<div style={{color:"#8d6e63",fontSize:12,fontWeight:700}}>別途金額分 ¥{calcSonotaTotal(form).toLocaleString()}</div>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {/* 管理費（自社/他社の人数按分） */}
+                  {(()=>{
+                    const kanrihi=(form.inspectionTypes||[]).includes("防火設備点検")?calcBokaKanrihi(form):0;
+                    if(kanrihi===0) return null;
+                    const {kanrihiOwnAmt,kanrihiOtherAmt}=calcKanrihiSplit(form,kanrihi);
+                    const KRow=({label,field,val})=>(
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{color:"#ffb74d",fontSize:12,fontWeight:700,minWidth:64}}>{label}</span>
+                        <input type="text" inputMode="numeric" value={val} onChange={e=>{if(!e.nativeEvent.isComposing)set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)));}} onCompositionEnd={e=>set(field,e.target.value.replace(/[０-９]/g,s=>String.fromCharCode(s.charCodeAt(0)-0xFEE0)))} placeholder="人数" style={{...mi,width:60,textAlign:"center"}}/>
+                        <span style={{color:"#546e7a",fontSize:12}}>人</span>
+                      </div>
+                    );
+                    return(
+                      <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #ffb74d20"}}>
+                        <div style={{color:"#ffb74d",fontSize:10,fontWeight:700,marginBottom:8}}>💴 管理費 按分（管理費 ¥{kanrihi.toLocaleString()}）</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          <KRow label="管理費 自社" field="kanrihiOwn" val={kanrihiOwn}/>
+                          <KRow label="管理費 他社" field="kanrihiOther" val={kanrihiOther}/>
+                          <div style={{display:"flex",gap:14,marginTop:2}}>
+                            <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社 ¥{kanrihiOwnAmt.toLocaleString()}</span>
+                            {kanrihiOtherAmt>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社 ¥{kanrihiOtherAmt.toLocaleString()}</span>}
+                          </div>
+                          {!kanrihiOwn&&!kanrihiOther&&<div style={{color:"#546e7a",fontSize:11}}>未入力の場合は自社が全額受け取ります</div>}
                         </div>
                       </div>
                     );
@@ -3508,7 +3597,7 @@ function HolidayEditor({db, setDb, showMsg}) {
 function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworkers=[]}) {
   const workerOptions = [...WORKERS.filter(w=>w!=="その他"), ...extraCoworkers];
   const [filterType, setFilterType] = useState("");
-  const [filterMonth, setFilterMonth] = useState(()=>new Date().toISOString().slice(0,7));
+  const [filterMonth, setFilterMonth] = useState(()=>new Date().toISOString().slice(0,7).replace("-","/"));
   const [filterWorker, setFilterWorker] = useState("");
   const [searchGenba, setSearchGenba] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -3583,10 +3672,11 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
     }
     const kubun = getKubun(r.date, r.startTime);
     const mult = r.calcMult || "なし";
-    const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices)+calcBokaKanrihi(r) : 0;
+    const kanrihi = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBokaKanrihi(r) : 0;
+    const bokaAmt = (r.inspectionTypes||[]).includes("防火設備点検") ? calcBoka(r, mult, prices)+kanrihi : 0;
     const sogoAmt = (r.inspectionTypes||[]).includes("総合点検") ? calcSogo(r, mult, prices) : 0;
     const teikiAmt = (r.inspectionTypes||[]).includes("定期点検") ? calcTeiki(r, mult, prices) : 0;
-    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, extraTotal:calcExtraTotal(r), sonotaTotal:calcSonotaTotal(r), row:r};
+    return {id:r.id, genba:r.genba, types:r.inspectionTypes||[], dates:[r.date], worker:[r.worker], teikiData, bokaData, kubun, startTime:r.startTime, endTime:r.endTime, memo:r.memo, bokaAmt, sogoAmt, teikiAmt, kanrihi, extraTotal:calcExtraTotal(r), sonotaTotal:calcSonotaTotal(r), row:r};
   }).sort((a,b)=>{
     if(a.dates[0]>b.dates[0])return 1;
     if(a.dates[0]<b.dates[0])return -1;
@@ -3597,7 +3687,7 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
   const exportSelected = (genbas) => {
     const targets = genbas.filter(g=>selected.has(g.id));
     if(targets.length===0){ alert("PDFにする現場を選択してください"); return; }
-    let grandTotal=0, grandOwnTotal=0;
+    let grandOwnTotal=0;
     const allHtml = targets.map(g=>{
       const workerRow = allRows.find(r=>r.id===g.id);
       const sectionStr = (workerRow?.sections||[]).join("・")||"—";
@@ -3608,14 +3698,15 @@ function InspectionSummary({allRows, exportPDF, prices={}, onEdit, extraCoworker
       const inspAmount = g.bokaAmt+g.sogoAmt+g.teikiAmt;
       const amount = inspAmount+g.extraTotal+g.sonotaTotal;
       const {ownTotal}=calcOwnOtherSplit(workerRow,inspAmount);
-      grandTotal+=amount; grandOwnTotal+=ownTotal;
+      grandOwnTotal+=ownTotal;
       const extraHtml = (workerRow?.extraCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
         `<div style="font-size:11px;color:#555;margin-bottom:2px">＋ ${e.label||"追加"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
       const sonotaHtml = (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
         `<div style="font-size:11px;color:#8d6e63;margin-bottom:2px">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
       const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
-      const ownLineHtml = ownTotal!==amount?`<div style="font-size:11px;color:#555;margin-bottom:6px">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:"";
-      const amountHtml = (amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">金額: ¥${amount.toLocaleString()}</div>${ownLineHtml}${formulaHtml}${extraHtml}`:"")+sonotaHtml+`<div style="margin-bottom:4px"></div>`;
+      const ratioHtml = workerRow?buildRatioHtml(workerRow,inspAmount,g.extraTotal):"";
+      const ownLineHtml = (!ratioHtml&&ownTotal!==amount)?`<div style="font-size:11px;color:#555;margin-bottom:6px">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:"";
+      const amountHtml = (amount>0?`<div style="font-size:12px;color:#1a237e;font-weight:bold;margin-bottom:2px">自社合計 ¥${ownTotal.toLocaleString()}</div>${ownLineHtml}${formulaHtml}${ratioHtml}${extraHtml}`:"")+sonotaHtml+`<div style="margin-bottom:4px"></div>`;
       const teikiHtml = Object.keys(g.teikiData).length>0
         ? `<h3 class="teiki">定期点検</h3><table><thead><tr><th>種別</th><th style="text-align:right">台数</th></tr></thead><tbody>
            ${Object.entries(g.teikiData).map(([l,c])=>`<tr><td>${l}</td><td style="text-align:right;font-weight:bold">${c}台</td></tr>`).join("")}
@@ -3646,7 +3737,7 @@ h3.teiki{font-size:11px;color:#2e7d32;margin:10px 0 5px;border-bottom:1px solid 
 h3.boka{font-size:11px;color:#e65100;margin:10px 0 5px;border-bottom:1px solid #ffcc80;padding-bottom:2px}
 @media print{body{margin:12px}}</style></head>
 <body><h2 style="font-size:16px;margin-bottom:8px">📋 点検台数集計（${targets.length}現場）</h2>
-<div style="font-size:13px;font-weight:bold;margin-bottom:16px;padding:10px 14px;background:#eef2f8;border-radius:6px;color:#1a237e;">合計金額 ¥${grandTotal.toLocaleString()}　／　自社合計 ¥${grandOwnTotal.toLocaleString()}</div>
+<div style="font-size:13px;font-weight:bold;margin-bottom:16px;padding:10px 14px;background:#eef2f8;border-radius:6px;color:#1a237e;">自社合計 ¥${grandOwnTotal.toLocaleString()}</div>
 ${allHtml}</body></html>`;
     const blob=new Blob([html],{type:"text/html"}); const u=URL.createObjectURL(blob); const w=window.open(u,"_blank"); if(w) setTimeout(()=>{w.print(); setTimeout(()=>URL.revokeObjectURL(u),60000);},500);
   };
@@ -3676,6 +3767,7 @@ ${allHtml}</body></html>`;
       + (workerRow?.sonotaCharges||[]).filter(e=>parseInt(e.amount)>0).map(e=>
       `<div class="meta" style="color:#8d6e63;">📎 ${e.label||"別途"}: ¥${(parseInt(e.amount)||0).toLocaleString()}</div>`).join("");
     const formulaHtml = workerRow?buildAmountFormulaHtml(workerRow,workerRow.calcMult||"なし",prices):"";
+    const ratioHtml = workerRow?buildRatioHtml(workerRow,inspAmount,g.extraTotal):"";
     const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${g.genba} 点検集計</title>
 <style>body{font-family:'Hiragino Sans',sans-serif;margin:24px;font-size:13px}h2{font-size:16px;margin-bottom:4px}
 .meta{color:#666;font-size:11px;margin-bottom:4px}table{border-collapse:collapse;width:100%;max-width:400px}
@@ -3690,8 +3782,9 @@ h3.boka{font-size:11px;color:#e65100;margin:12px 0 5px;border-bottom:1px solid #
   <span>区分: ${kubunStr||"—"} ／ 作業員: ${g.worker.join("・")}</span>
   <span>所課: ${sectionStr} ／ 営業名: ${eigyoStr}</span>
 </div>
-${amount>0?`<div style="font-size:13px;font-weight:bold;color:#1a237e;margin:6px 0 2px;">金額: ¥${amount.toLocaleString()}</div>${ownTotal!==amount?`<div class="meta">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:""}`:""}
+${amount>0?`<div style="font-size:13px;font-weight:bold;color:#1a237e;margin:6px 0 2px;">自社合計 ¥${ownTotal.toLocaleString()}</div>${(!ratioHtml&&ownTotal!==amount)?`<div class="meta">└ 自社点検分 ¥${ownTotal.toLocaleString()}${g.sonotaTotal>0?`　／　別途金額分 ¥${g.sonotaTotal.toLocaleString()}`:""}</div>`:""}`:""}
 ${formulaHtml}
+${ratioHtml}
 ${extraHtml}
 ${workerRow?.memo?`<div class="meta" style="margin-top:6px;padding:6px 8px;background:#f9f9f9;border-left:3px solid #ccc">📝 メモ: ${workerRow.memo}</div>`:""}
 ${teikiHtml}${bokaHtml}</body></html>`;
@@ -3857,46 +3950,61 @@ ${teikiHtml}${bokaHtml}</body></html>`;
                 )}
 
                 {/* 割合計算（count7/count3/count7other/count3otherから自動表示） */}
-                {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal)>0&&(g.row.count7||g.row.count3||g.row.count7other||g.row.count3other)&&(()=>{
+                {(g.bokaAmt+g.sogoAmt+g.teikiAmt+g.extraTotal)>0&&(g.row.count7||g.row.count3||g.row.count7other||g.row.count3other||g.kanrihi>0)&&(()=>{
                   const inspTotal=g.bokaAmt+g.sogoAmt+g.teikiAmt;
+                  const kanrihi=g.kanrihi||0;
+                  const splitBase=inspTotal-kanrihi; // 管理費は点検按分と分けて自社/他社の人数比で按分する
                   const n7own=parseInt(g.row.count7)||0;
                   const n3own=parseInt(g.row.count3)||0;
                   const n7other=parseInt(g.row.count7other)||0;
                   const n3other=parseInt(g.row.count3other)||0;
                   const n7=n7own+n7other, n3=n3own+n3other;
                   const totalParts=7*n7+3*n3;
-                  const amt7=totalParts>0&&n7>0?Math.floor(inspTotal*7/totalParts):0;
-                  const amt3=totalParts>0&&n3>0?Math.floor(inspTotal*3/totalParts):0;
-                  const ownTotal=amt7*n7own+amt3*n3own+g.extraTotal;
-                  const otherTotal=amt7*n7other+amt3*n3other;
-                  const CountRow=({label,n,amt})=>n>0?(
+                  const amt7raw=totalParts>0&&n7>0?Math.floor(splitBase*7/totalParts):0;
+                  const amt3raw=totalParts>0&&n3>0?Math.floor(splitBase*3/totalParts):0;
+                  const {amt:amt7,raw:amt7Raw,bumped:amt7Bumped}=applyBokaMin(amt7raw,g.row);
+                  const {amt:amt3,raw:amt3Raw,bumped:amt3Bumped}=applyBokaMin(amt3raw,g.row);
+                  const {kanrihiOwnAmt,kanrihiOtherAmt}=calcKanrihiSplit(g.row,kanrihi);
+                  const ownTotal=amt7*n7own+amt3*n3own+g.extraTotal+kanrihiOwnAmt;
+                  const otherTotal=amt7*n7other+amt3*n3other+kanrihiOtherAmt;
+                  const CountRow=({label,n,amt,raw,bumped})=>n>0?(
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{color:"#86efac",fontSize:12,fontWeight:700,minWidth:52}}>{label}</span>
                       <span style={{background:"#0a1018",border:"1px solid #1a2634",borderRadius:5,padding:"4px 12px",color:"#cfd8dc",fontSize:13,fontWeight:700,minWidth:36,textAlign:"center"}}>{n}</span>
                       <span style={{color:"#546e7a",fontSize:12}}>人</span>
-                      {amt>0&&<span style={{color:"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人</span>}
+                      {bumped&&<span style={{color:"#78909c",fontSize:12,textDecoration:"line-through"}}>¥{raw.toLocaleString()}</span>}
+                      {amt>0&&<span style={{color:bumped?"#ef9a9a":"#a5d6a7",fontWeight:700,fontSize:13}}>¥{amt.toLocaleString()}/人{bumped?"（最低金額）":""}</span>}
                     </div>
                   ):null;
                   return(
                     <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
                       <div style={{color:"#546e7a",fontSize:10,fontWeight:700,marginBottom:8}}>👥 割合計算</div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        <CountRow label="自社7割" n={n7own} amt={amt7}/>
-                        <CountRow label="自社3割" n={n3own} amt={amt3}/>
-                        <CountRow label="他社7割" n={n7other} amt={amt7}/>
-                        <CountRow label="他社3割" n={n3other} amt={amt3}/>
+                        <CountRow label="自社7割" n={n7own} amt={amt7} raw={amt7Raw} bumped={amt7Bumped}/>
+                        <CountRow label="自社3割" n={n3own} amt={amt3} raw={amt3Raw} bumped={amt3Bumped}/>
+                        <CountRow label="他社7割" n={n7other} amt={amt7} raw={amt7Raw} bumped={amt7Bumped}/>
+                        <CountRow label="他社3割" n={n3other} amt={amt3} raw={amt3Raw} bumped={amt3Bumped}/>
                         {totalParts>0&&<div style={{color:"#546e7a",fontSize:11}}>合計割合: {totalParts}</div>}
-                        {(ownTotal>0||otherTotal>0)&&(
-                          <div style={{display:"flex",gap:14}}>
-                            {ownTotal>0&&<span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社合計 ¥{ownTotal.toLocaleString()}</span>}
-                            {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
-                          </div>
-                        )}
-                        {g.sonotaTotal>0&&<div style={{color:"#8d6e63",fontSize:12,fontWeight:700}}>別途金額分 ¥{g.sonotaTotal.toLocaleString()}</div>}
-                        {g.worker.length>0&&(
-                          <div style={{color:"#4fc3f7",fontSize:11,marginTop:2}}>{g.worker.join(" ／ ")}</div>
-                        )}
                       </div>
+                      {kanrihi>0&&(
+                        <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed #1a2634"}}>
+                          <div style={{color:"#ffb74d",fontSize:10,fontWeight:700,marginBottom:6}}>💴 管理費 ¥{kanrihi.toLocaleString()}</div>
+                          <div style={{display:"flex",gap:14}}>
+                            <span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社 ¥{kanrihiOwnAmt.toLocaleString()}</span>
+                            {kanrihiOtherAmt>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社 ¥{kanrihiOtherAmt.toLocaleString()}</span>}
+                          </div>
+                        </div>
+                      )}
+                      {(ownTotal>0||otherTotal>0)&&(
+                        <div style={{display:"flex",gap:14,marginTop:10,paddingTop:10,borderTop:"1px solid #1a2634"}}>
+                          {ownTotal>0&&<span style={{color:"#4fc3f7",fontSize:12,fontWeight:700}}>自社合計 ¥{ownTotal.toLocaleString()}</span>}
+                          {otherTotal>0&&<span style={{color:"#ffb74d",fontSize:12,fontWeight:700}}>他社合計 ¥{otherTotal.toLocaleString()}</span>}
+                        </div>
+                      )}
+                      {g.sonotaTotal>0&&<div style={{color:"#8d6e63",fontSize:12,fontWeight:700,marginTop:6}}>別途金額分 ¥{g.sonotaTotal.toLocaleString()}</div>}
+                      {g.worker.length>0&&(
+                        <div style={{color:"#4fc3f7",fontSize:11,marginTop:6}}>{g.worker.join(" ／ ")}</div>
+                      )}
                     </div>
                   );
                 })()}

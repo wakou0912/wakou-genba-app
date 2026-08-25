@@ -145,7 +145,7 @@ function PayrollRow({ label, value, onChange, readOnly = false, highlight = fals
 }
 
 const BLANK_EMPLOYEE = {
-  name: "", baseSalary: 0, communicationAllowance: 0, transportAllowance: 0, housingAllowance: 0,
+  name: "", hireDate: "", baseSalary: 0, communicationAllowance: 0, transportAllowance: 0, housingAllowance: 0,
   standardMonthlyRemuneration: 0, needsLongTermCareInsurance: false, municipalTax: 0, juneMunicipalTax: 0,
   isOfficer: false, dependents: 0,
 };
@@ -189,6 +189,10 @@ function EmployeeFormModal({ initial, onClose, onSaved }) {
         <div className="pr-field">
           <label className="pr-label">氏名 *</label>
           <input type="text" className="pr-input" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="例: 山田 太郎" />
+        </div>
+        <div className="pr-field">
+          <label className="pr-label">入社日</label>
+          <input type="date" className="pr-input" value={form.hireDate} onChange={(e) => set("hireDate", e.target.value)} />
         </div>
         <div className="pr-grid2">
           <div className="pr-field"><label className="pr-label">基本給（円）</label><NumberInput value={form.baseSalary} onChange={(v) => set("baseSalary", v)} /></div>
@@ -454,7 +458,7 @@ export default function PayrollView() {
             <div key={emp.id} className="pr-card pr-emp-card">
               <div>
                 <div className="pr-emp-name">{emp.name}</div>
-                <div className="pr-emp-sub">基本給 {emp.baseSalary.toLocaleString("ja-JP")} 円</div>
+                <div className="pr-emp-sub">基本給 {emp.baseSalary.toLocaleString("ja-JP")} 円{emp.hireDate ? `　入社日 ${emp.hireDate}` : ""}</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className={`pr-badge ${payroll ? "pr-badge-done" : "pr-badge-todo"}`}>{payroll ? "作成済み" : "未作成"}</span>

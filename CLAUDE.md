@@ -9,6 +9,8 @@
 2. **本番Firestore（`db/main`, `estimateBilling/main`）は本物のデータ。** ローカル開発サーバーも同じ本番Firebaseプロジェクト（`wakou-genba`）につながっている。テストのつもりで保存ボタンを押すと本番データが書き換わるので注意。テストで保存した場合は、テスト用の値だと分かるようにりょうに報告する。
 3. **開発サーバー（vite）は動作確認が終わってもすぐには止めない。** りょうが並行してブラウザで見てることがあるので、止める前に一声かけるか、止めたら「止めた」と伝える。
 4. **git push で認証エラーが出たら**、`gh auth setup-git` をりょうに実行してもらう（gitのcredential helperが古いトークンを掴んでいるだけで、`gh auth status` 自体は生きていることが多い）。
+5. **このリポジトリを非公開(Private)にしない。** GitHub Pagesは無料の個人アカウントだと公開リポジトリでしか使えない。非公開にした瞬間本番サイトが落ちる（2026-08-26に実際にやってダウンタイムを起こした）。ソースコードが公開されていること自体のセキュリティ対策は、リポジトリを非公開にする以外の方法（Firebase App Check、Firestoreルールの見直しなど）で検討すること。
+6. **GitHub Pagesが404で落ちたら**: `gh api repos/wakou0912/wakou-genba-app/pages` で設定を確認。`build_type`が`workflow`になっていて実際のデプロイは`peaceiris/actions-gh-pages@v3`でgh-pagesブランチに直pushする方式（legacy）の場合、設定がミスマッチしてビルドされない。`gh api repos/wakou0912/wakou-genba-app/pages -X PUT -f "build_type=legacy" -f "source[branch]=gh-pages" -f "source[path]=/"` で合わせた上で、`gh api repos/wakou0912/wakou-genba-app/pages/builds -X POST` で手動ビルドをリクエストする。
 
 ## デプロイの仕組み
 

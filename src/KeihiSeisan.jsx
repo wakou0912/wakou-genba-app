@@ -26,6 +26,12 @@ const RED = "#E53935";
 
 function catIcon(name) { const c = CATEGORIES.find(c => c.name === name); return c ? c.icon : "📋"; }
 function currentYM() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; }
+function ymBounds(ym) {
+  if(!ym) return null;
+  const [y,m]=ym.split("-").map(Number);
+  const lastDay=new Date(y,m,0).getDate();
+  return { min:`${ym}-01`, max:`${ym}-${String(lastDay).padStart(2,"0")}` };
+}
 
 function cardSubtotal(card) { return (card.receipts||[]).reduce((s,r)=>s+(parseInt(r.amount)||0),0); }
 function sortByDate(receipts) { return [...receipts].sort((a,b)=>!a.date?1:!b.date?-1:a.date.localeCompare(b.date)); }
@@ -83,6 +89,11 @@ async function fsUnlock(ym,userName) {
   const snap=await getDoc(doc(firestore,"keihi",ym,"entries",userName));
   if(!snap.exists())return;
   await setDoc(doc(firestore,"keihi",ym,"entries",userName),{...snap.data(),status:"draft"});
+}
+async function fsSetPaid(ym,userName,paid) {
+  const snap=await getDoc(doc(firestore,"keihi",ym,"entries",userName));
+  if(!snap.exists())return;
+  await setDoc(doc(firestore,"keihi",ym,"entries",userName),{...snap.data(),paid});
 }
 async function fsLoadMonth(ym) {
   const snap=await getDocs(collection(firestore,"keihi",ym,"entries"));
@@ -230,9 +241,10 @@ function Toast({msg}) {
 }
 
 // ─── ReceiptRow ───
-function ReceiptRow({receipt,locked,onUpdate,onDelete,onPhotoPreview}) {
+function ReceiptRow({receipt,locked,ym,onUpdate,onDelete,onPhotoPreview}) {
   const prevAmtRef = useRef(null);
   const [pending, setPending] = useState(null); // {oldNum,newNum}
+  const bounds = ymBounds(ym);
 
   function handleFocus(e) { prevAmtRef.current = e.target.value; }
   function handleBlur(e) {
@@ -246,16 +258,23 @@ function ReceiptRow({receipt,locked,onUpdate,onDelete,onPhotoPreview}) {
   }
   function confirmAmt() { setPending(null); onUpdate("date",receipt.date); /* force needsCheck clear */ }
   function cancelAmt() { onUpdate("amount", pending.oldNum); setPending(null); }
+  const outOfMonth = !!(bounds && receipt.date && (receipt.date<bounds.min || receipt.date>bounds.max));
 
   return (
     <>
       <AmountModal show={!!pending} msg={pending?`¥${pending.oldNum.toLocaleString()} → ¥${pending.newNum.toLocaleString()} に変更します。よろしいですか？`:""} onClose={cancelAmt} onConfirm={confirmAmt}/>
       <div style={{display:"grid",gridTemplateColumns:"110px 1fr 90px 28px",gap:6,alignItems:"center",padding:"5px 14px",borderTop:"1px solid #F0F3F8"}}>
-        <input type="date" value={receipt.date||""} onChange={e=>{onUpdate("date",e.target.value);}} disabled={locked} style={locked?inpDis:inp}/>
+        <input type="date" value={receipt.date||""} onChange={e=>onUpdate("date",e.target.value)} disabled={locked} style={locked?inpDis:{...inp,...(outOfMonth?{borderColor:RED,color:RED}:{})}}/>
         <input type="text" value={receipt.memo||""} onChange={e=>onUpdate("memo",e.target.value)} disabled={locked} placeholder="報告事項" style={locked?inpDis:inp}/>
         <input type="number" value={receipt.amount||""} onChange={e=>onUpdate("amount",parseInt(e.target.value)||0)} onFocus={handleFocus} onBlur={handleBlur} disabled={locked} placeholder="0" min="0" step="10" style={{...(locked?inpDis:inp),textAlign:"right"}}/>
         {locked?<span/>:<button onClick={onDelete} style={{background:"none",border:"none",color:SUB,fontSize:15,cursor:"pointer",padding:2,borderRadius:4,lineHeight:1,textAlign:"center",fontFamily:"inherit"}}>✕</button>}
       </div>
+      {outOfMonth&&(
+        <div style={{padding:"0 14px 8px"}}>
+          <div style={{fontSize:11,color:RED,fontWeight:700,marginBottom:4}}>⚠️ {ym.replace("-","年")}月と違う月の日付です。理由を書いてください</div>
+          <input type="text" value={receipt.offMonthReason||""} onChange={e=>onUpdate("offMonthReason",e.target.value)} disabled={locked} placeholder="例：出張中に立て替えた分を今月まとめて精算" style={locked?inpDis:{...inp,width:"100%",borderColor:RED}}/>
+        </div>
+      )}
       {receipt.needsCheck&&(
         <div style={{fontSize:11,color:ORANGE,padding:"0 14px 6px",fontWeight:600,display:"flex",alignItems:"center",gap:8}}>
           ※日付、金額確認してください
@@ -267,7 +286,7 @@ function ReceiptRow({receipt,locked,onUpdate,onDelete,onPhotoPreview}) {
 }
 
 // ─── KeihiCard ───
-function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,onBulkCamera,onBulkDrop,onPhotoPreview}) {
+function KeihiCard({card,locked,index,ym,onUpdateR,onDeleteR,onAddR,onDeleteCard,onBulkCamera,onBulkDrop,onPhotoPreview}) {
   const sorted = sortByDate(card.receipts||[]);
   const sub = cardSubtotal(card);
   const dupIds = findDupIds(card);
@@ -290,7 +309,7 @@ function KeihiCard({card,locked,index,onUpdateR,onDeleteR,onAddR,onDeleteCard,on
       </div>
       {sorted.map(r=>(
         <div key={r.id}>
-          <ReceiptRow receipt={r} locked={locked}
+          <ReceiptRow receipt={r} locked={locked} ym={ym}
             onUpdate={(k,v)=>onUpdateR(card.id,r.id,k,v)}
             onDelete={()=>onDeleteR(card.id,r.id)}
             onPhotoPreview={onPhotoPreview}
@@ -462,7 +481,7 @@ function WorkerKeihi({userName}) {
             </div>
           )}
           {cards.map((card,i)=>(
-            <KeihiCard key={card.id} card={card} locked={submitted} index={i}
+            <KeihiCard key={card.id} card={card} locked={submitted} index={i} ym={ym}
               onUpdateR={updateReceipt} onDeleteR={deleteReceipt} onAddR={addReceipt}
               onDeleteCard={deleteCard} onBulkCamera={handleBulkCamera} onBulkDrop={handleBulkDrop} onPhotoPreview={setPhotoSrc}
             />
@@ -630,16 +649,24 @@ function CrossTab({allSubs,centerYM}) {
 }
 
 // ─── SubmissionCard（管理者用）───
-function SubmissionCard({entry,onUnlock}) {
+function SubmissionCard({entry,onUnlock,onTogglePaid}) {
   const [open,setOpen]=useState(false);
   const total=(entry.cards||[]).reduce((s,c)=>s+cardSubtotal(c),0);
   const at=entry.submittedAt?new Date(entry.submittedAt):null;
   const atStr=at?`${at.getMonth()+1}/${at.getDate()} ${at.getHours()}:${String(at.getMinutes()).padStart(2,"0")} 提出`:"";
+  const paid=!!entry.paid;
+  const locked=entry.status==="submitted";
   return(
-    <div style={{background:"white",borderRadius:10,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:12,overflow:"hidden"}}>
+    <div style={{background:"white",borderRadius:10,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:12,overflow:"hidden",border:paid?"1.5px solid #A5D6A7":"none"}}>
       <div onClick={()=>setOpen(p=>!p)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",borderBottom:open?"1px solid #EEF1F6":"none",cursor:"pointer"}}>
         <div>
-          <div style={{fontSize:15,fontWeight:700}}>👤 {entry.userName}</div>
+          <div style={{fontSize:15,fontWeight:700,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            👤 {entry.userName}
+            {locked
+              ?<span style={{fontSize:11,fontWeight:700,color:ORANGE,background:"#FFF3E0",borderRadius:5,padding:"2px 7px"}}>🔒 ロック中（提出済み）</span>
+              :<span style={{fontSize:11,fontWeight:700,color:"#1A6BB5",background:"#E8F4FF",borderRadius:5,padding:"2px 7px"}}>🔓 アンロック中（編集可）</span>}
+            {paid&&<span style={{fontSize:11,fontWeight:700,color:GREEN,background:"#E8F5E9",borderRadius:5,padding:"2px 7px"}}>✅ 支払済</span>}
+          </div>
           <div style={{fontSize:11,color:SUB,marginTop:2}}>{atStr}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -658,18 +685,29 @@ function SubmissionCard({entry,onUnlock}) {
                     <span>{catIcon(card.category)} {card.category}</span><span>¥{sub.toLocaleString()}</span>
                   </div>
                   {(card.receipts||[]).map(r=>(
-                    <div key={r.id} style={{display:"grid",gridTemplateColumns:"90px 1fr 80px",gap:8,fontSize:12,color:"#555",padding:"4px",alignItems:"center"}}>
-                      <span style={{color:"#888"}}>{r.date||"(日付未入力)"}</span>
-                      <span style={{wordBreak:"break-word"}}>{r.memo||<span style={{color:"#CCC"}}>（報告事項なし）</span>}</span>
-                      <span style={{textAlign:"right",fontWeight:600,color:NAVY}}>¥{(parseInt(r.amount)||0).toLocaleString()}</span>
+                    <div key={r.id}>
+                      <div style={{display:"grid",gridTemplateColumns:"90px 1fr 80px",gap:8,fontSize:12,color:"#555",padding:"4px",alignItems:"center"}}>
+                        <span style={{color:"#888"}}>{r.date||"(日付未入力)"}</span>
+                        <span style={{wordBreak:"break-word"}}>{r.memo||<span style={{color:"#CCC"}}>（報告事項なし）</span>}</span>
+                        <span style={{textAlign:"right",fontWeight:600,color:NAVY}}>¥{(parseInt(r.amount)||0).toLocaleString()}</span>
+                      </div>
+                      {r.offMonthReason&&(
+                        <div style={{fontSize:11,color:RED,padding:"0 4px 4px",fontWeight:600}}>⚠️ 対象月と違う日付の理由: {r.offMonthReason}</div>
+                      )}
                     </div>
                   ))}
                 </div>
               );
             })}
           </div>
-          <div style={{padding:"10px 16px 14px",display:"flex",justifyContent:"flex-end"}}>
-            <button onClick={onUnlock} style={{background:"#FFF3E0",color:ORANGE,border:"1.5px solid #FFCC80",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🔓 ロックを解除する</button>
+          <div style={{padding:"10px 16px 14px",display:"flex",justifyContent:"flex-end",gap:8}}>
+            <button onClick={(e)=>{e.stopPropagation();onTogglePaid();}}
+              style={paid
+                ?{background:"#F0F0F0",color:SUB,border:"1.5px solid #DDD",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}
+                :{background:"#E8F5E9",color:GREEN,border:"1.5px solid #A5D6A7",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {paid?"支払済を解除":"✅ 支払済にする"}
+            </button>
+            {locked&&<button onClick={(e)=>{e.stopPropagation();onUnlock();}} style={{background:"#FFF3E0",color:ORANGE,border:"1.5px solid #FFCC80",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🔓 ロックを解除する</button>}
           </div>
         </div>
       )}
@@ -720,6 +758,11 @@ function AdminKeihi() {
     await fsUnlock(unlockTarget.ym,unlockTarget.userName);
     setUnlockTarget(null);showToast("ロックを解除しました");loadEntries();
   }
+  async function handleTogglePaid(uname,entry){
+    await fsSetPaid(ym,uname,!entry.paid);
+    showToast(entry.paid?"支払済を解除しました":"✅ 支払済にしました");
+    loadEntries();
+  }
   function onMemoInput(e){
     const text=e.target.value; setMemo(text); setMemoStatus("入力中...");
     clearTimeout(memoTimer.current);
@@ -765,10 +808,13 @@ function AdminKeihi() {
                 <p>{ym.replace("-","年")}月の提出はまだありません</p>
               </div>
             )}
-            {!loading&&Object.entries(entries).map(([uname,entry])=>(
-              <SubmissionCard key={uname} entry={entry}
-                onUnlock={()=>setUnlockTarget({ym,userName:uname,label:`${ym.replace("-","年")}月分 / ${uname}`})}
-              />
+            {!loading&&Object.entries(entries)
+              .sort((a,b)=>(a[1].submittedAt||"").localeCompare(b[1].submittedAt||""))
+              .map(([uname,entry])=>(
+                <SubmissionCard key={uname} entry={entry}
+                  onUnlock={()=>setUnlockTarget({ym,userName:uname,label:`${ym.replace("-","年")}月分 / ${uname}`})}
+                  onTogglePaid={()=>handleTogglePaid(uname,entry)}
+                />
             ))}
           </>
         )}

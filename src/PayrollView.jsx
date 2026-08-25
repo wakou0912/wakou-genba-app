@@ -255,6 +255,10 @@ function PayrollEditorSheet({ employeeId, yearMonth, onClose, onSaved }) {
     });
   };
 
+  const setEmployeeField = (key, value) => {
+    setEmployee((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
   const handleCopyPrev = async () => {
     if (!employee) return;
     const prev = await loadPrevPayroll(employeeId, yearMonth);
@@ -264,11 +268,11 @@ function PayrollEditorSheet({ employeeId, yearMonth, onClose, onSaved }) {
   };
 
   const handleSave = async () => {
-    if (!payroll) return;
+    if (!payroll || !employee) return;
     setSaving(true);
     try {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("タイムアウト（15秒）: Firestoreに接続できません")), 15000));
-      await Promise.race([savePayroll(payroll), timeout]);
+      await Promise.race([Promise.all([savePayroll(payroll), saveEmployee(employee)]), timeout]);
       alert("保存しました");
       onSaved();
     } catch (e) {
@@ -362,6 +366,11 @@ function PayrollEditorSheet({ employeeId, yearMonth, onClose, onSaved }) {
               <div className="pr-card" style={{ padding: 16, marginBottom: 16 }}>
                 <label className="pr-label">備考</label>
                 <textarea className="pr-input" rows={3} style={{ resize: "none" }} value={payroll.remarks ?? ""} onChange={(e) => setField("remarks", e.target.value)} placeholder="PDFの備考欄に印刷されます" />
+              </div>
+
+              <div className="pr-card" style={{ padding: 16, marginBottom: 16, background: "#fffbeb" }}>
+                <label className="pr-label">引き継ぎメモ（PDFには印刷されません・どの月でも共通で表示されます）</label>
+                <textarea className="pr-input" rows={3} style={{ resize: "none" }} value={employee.internalNote ?? ""} onChange={(e) => setEmployeeField("internalNote", e.target.value)} placeholder="社内用のメモ・次回引き継ぎ事項など" />
               </div>
 
               <div className="pr-netpay">

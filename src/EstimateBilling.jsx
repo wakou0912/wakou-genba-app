@@ -845,8 +845,14 @@ export default function EstimateBilling() {
   useEffect(() => {
     const docRef = doc(firestore, "estimateBilling", "main");
     const unsub = onSnapshot(docRef, snap => {
-      if (snap.exists()) setDbState(migrate(snap.data()));
-      else { const s = seedData(); setDoc(docRef, s).catch(console.error); setDbState(s); }
+      // exists()が一時的な通信不調などで誤ってfalseを返しても、
+      // ここでFirestoreへの書き込みは行わない（実データを空データで
+      // 上書きしてしまう事故を防ぐため）。表示だけ初期データにして、
+      // 実際にドキュメントが存在しない場合はユーザーの最初の保存操作
+      // （save()内のsetDoc）が自然にドキュメントを作成する。
+      if (snap.exists()) { setDbState(migrate(snap.data())); return; }
+      setDbState(seedData());
+      notice("⚠️ 見積・請求データを読み込めませんでした。何も操作せずページを再読み込みしてください。");
     }, console.error);
     return unsub;
   }, []);

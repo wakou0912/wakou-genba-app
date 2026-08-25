@@ -88,6 +88,31 @@ function monthLabel(ym) {
   const [y, m] = ym.split("-");
   return `${y}年${parseInt(m)}月`;
 }
+function tenureMonths(hireDate, atDate) {
+  const hire = new Date(hireDate + "T00:00:00");
+  if (isNaN(hire.getTime())) return null;
+  let months = (atDate.getFullYear() - hire.getFullYear()) * 12 + (atDate.getMonth() - hire.getMonth());
+  if (atDate.getDate() < hire.getDate()) months -= 1;
+  if (months < 0) return null;
+  return months;
+}
+function formatTenure(months) {
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  return `勤続${years}年${remMonths}ヶ月`;
+}
+function tenureLabel(hireDate) {
+  if (!hireDate) return "";
+  const m = tenureMonths(hireDate, new Date());
+  return m === null ? "" : formatTenure(m);
+}
+function tenureAtLabel(hireDate, yearMonth) {
+  if (!hireDate || !yearMonth) return "";
+  const [y, mo] = yearMonth.split("-").map(Number);
+  if (!y || !mo) return "";
+  const m = tenureMonths(hireDate, new Date(y, mo - 1, 1));
+  return m === null ? "" : formatTenure(m);
+}
 function prevYM(ym) {
   const [y, m] = ym.split("-").map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
@@ -147,7 +172,7 @@ function PayrollRow({ label, value, onChange, readOnly = false, highlight = fals
 const BLANK_EMPLOYEE = {
   name: "", hireDate: "", baseSalary: 0, communicationAllowance: 0, transportAllowance: 0, housingAllowance: 0,
   standardMonthlyRemuneration: 0, needsLongTermCareInsurance: false, municipalTax: 0, juneMunicipalTax: 0,
-  isOfficer: false, dependents: 0,
+  isOfficer: false, dependents: 0, salaryHistory: [],
 };
 
 const INITIAL_EMPLOYEES = [
@@ -163,6 +188,10 @@ function EmployeeFormModal({ initial, onClose, onSaved }) {
   const [form, setForm] = useState({ ...BLANK_EMPLOYEE, ...initial });
   const [saving, setSaving] = useState(false);
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const addHistoryEntry = () => set("salaryHistory", [...(form.salaryHistory || []), { id: crypto.randomUUID(), date: "", amount: 0, note: "" }]);
+  const updateHistoryEntry = (id, key, value) => set("salaryHistory", (form.salaryHistory || []).map((h) => (h.id === id ? { ...h, [key]: value } : h)));
+  const removeHistoryEntry = (id) => set("salaryHistory", (form.salaryHistory || []).filter((h) => h.id !== id));
 
   const handleSave = async () => {
     if (!form.name.trim()) { alert("氏名を入力してください"); return; }
@@ -221,6 +250,32 @@ function EmployeeFormModal({ initial, onClose, onSaved }) {
             <label htmlFor="pr-officer">役員（雇用保険なし）</label>
           </div>
         </div>
+
+        <div className="pr-divider">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span className="pr-label" style={{ marginBottom: 0 }}>給与推移</span>
+            <button className="pr-btn pr-btn-outline" onClick={addHistoryEntry}>＋ 追加</button>
+          </div>
+          {(form.salaryHistory || []).length === 0 ? (
+            <p style={{ fontSize: 12, color: "#9ca3af" }}>まだ記録がありません。基本給を変更したタイミングで追加していくと推移がわかります</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[...form.salaryHistory].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((h) => (
+                <div key={h.id} style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="month" className="pr-input" style={{ width: 132 }} value={h.date} onChange={(e) => updateHistoryEntry(h.id, "date", e.target.value)} />
+                    <div style={{ flex: 1 }}><NumberInput value={h.amount} onChange={(v) => updateHistoryEntry(h.id, "amount", v)} /></div>
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>円</span>
+                    <span style={{ fontSize: 11, color: "#9ca3af", minWidth: 88, textAlign: "right" }}>{form.hireDate && h.date ? tenureAtLabel(form.hireDate, h.date) : ""}</span>
+                    <button className="pr-close" onClick={() => removeHistoryEntry(h.id)}>✕</button>
+                  </div>
+                  <input type="text" className="pr-input" style={{ marginTop: 6 }} value={h.note || ""} onChange={(e) => updateHistoryEntry(h.id, "note", e.target.value)} placeholder="メモ（昇給理由など）" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="pr-actions">
           <button className="pr-btn pr-btn-primary" style={{ flex: 1 }} onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存"}</button>
           {initial && <button className="pr-btn pr-btn-danger-outline" onClick={handleDelete}>削除</button>}
@@ -458,7 +513,7 @@ export default function PayrollView() {
             <div key={emp.id} className="pr-card pr-emp-card">
               <div>
                 <div className="pr-emp-name">{emp.name}</div>
-                <div className="pr-emp-sub">基本給 {emp.baseSalary.toLocaleString("ja-JP")} 円{emp.hireDate ? `　入社日 ${emp.hireDate}` : ""}</div>
+                <div className="pr-emp-sub">基本給 {emp.baseSalary.toLocaleString("ja-JP")} 円{emp.hireDate ? `　入社日 ${emp.hireDate}（${tenureLabel(emp.hireDate)}）` : ""}</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className={`pr-badge ${payroll ? "pr-badge-done" : "pr-badge-todo"}`}>{payroll ? "作成済み" : "未作成"}</span>

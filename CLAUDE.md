@@ -57,3 +57,14 @@
 - ゲートパスワード（全員）: `Wakou850`
 - 管理者パスワード: `rmhc229159`
 - Firebaseプロジェクト: `wakou-genba`（本番・開発共通）
+
+## 給与明細タブ（PayrollView.jsx）― 別Firebaseプロジェクトとの連携
+
+2026-08-26、独立していた給与明細アプリ（`~/wako-payroll`, Next.js, Firebaseプロジェクト`kabusikigaisya-wakou`）を「🧾 給与明細」タブとして管理者タブに追加した。`見積・請求`と違い、**現場日報とは別のFirebaseプロジェクトに接続している**点に注意。
+
+- `src/firebasePayroll.js`: `kabusikigaisya-wakou`用のセカンダリFirebaseアプリ（`initializeApp(config, "payroll")`）。`PAYROLL_OWNER_UID`にオーナー（`wakou0912@gmail.com`）のFirebase Auth UIDをハードコードしている。
+- データパスは`users/{PAYROLL_OWNER_UID}/employees`と`/payrolls`（wako-payroll側と完全に同じ場所を直接読み書きしている。データのコピーではない）。
+- `kabusikigaisya-wakou`側のFirestoreルールに、このUID配下だけ`allow read, write: if true;`という特例を追加済み（Firebase Authを使わず現場日報アプリの管理者ログインだけでアクセスできるようにするため）。**Firestoreルールで`true`と書くときは必ず`if true`。`if`を省略すると構文エラーになる**（この実装時にハマった）。
+- 計算ロジック（`src/payrollCalc/`: calculations/insurance/tax/pdf/firestoreData）はwako-payrollのTypeScriptコードをほぼそのままJSに移植したもの。保険料率テーブルや源泉徴収税額表を更新する際は、元のwako-payroll側（`~/wako-payroll/lib/`）も両方直す必要がある（今のところ自動同期の仕組みはない）。
+- PDF出力は`jspdf`+`jspdf-autotable`を新規追加して使用（他のタブはwindow.print()方式だが、給与明細は書式の正確さ重視でプロトタイプ通りjsPDF方式を踏襲）。フォント(`public/fonts/NotoSansJP-Regular.ttf`)とロゴ(`public/payroll-logo.jpg`)が必要。
+- スタンドアロン版wako-payrollアプリ（Netlify）は今まで通りFirebase Authログインが必要なまま。同じデータを2つの入口（現場日報アプリのタブ／wako-payroll単体）から見に行く構成。

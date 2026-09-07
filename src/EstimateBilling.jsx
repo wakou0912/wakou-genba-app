@@ -599,7 +599,13 @@ function printInline(innerHtml, title, landscape) {
     window.removeEventListener("afterprint", cleanup);
   };
   window.addEventListener("afterprint", cleanup);
-  setTimeout(() => { window.print(); }, 50);
+  // 画像（ロゴ等）の読み込みとレイアウト完了を待ってから印刷する。
+  // 固定の短いタイムアウトだと、内容が重い場合に描画が間に合わず空白のまま印刷されることがあるため。
+  const imgs = Array.from(area.querySelectorAll("img"));
+  const waitImages = Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => { img.onload = img.onerror = res; })));
+  waitImages.then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => { window.print(); }));
+  });
 }
 function printOutput(innerHtml, title, landscape) {
   if (isMobileDevice()) printInline(innerHtml, title, landscape);

@@ -458,6 +458,7 @@ export default function PayrollView() {
   const [yearMonth, setYearMonth] = useState(currentYearMonth());
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState(null); // {type:"employeeForm", employee} | {type:"payrollEditor", employeeId}
+  const [exporting, setExporting] = useState(false);
 
   const reload = useCallback(() => {
     Promise.all([loadEmployees(), loadPayrolls()]).then(([emps, prs]) => {
@@ -466,6 +467,37 @@ export default function PayrollView() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Firestoreのemployees/payrollsを読むだけ（保存・上書きはしない）でJSONファイルとしてダウンロードする
+  const handleExportJson = async () => {
+    setExporting(true);
+    try {
+      const [emps, prs] = await Promise.all([loadEmployees(), loadPayrolls()]);
+      const payload = {
+        format: "wakou-payroll-proto",
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        employees: emps,
+        payrolls: prs,
+        bonuses: [],
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const d = new Date();
+      const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `wakou-payroll-export-${ymd}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("書き出しに失敗しました: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!PAYROLL_OWNER_UID) {
     return (
@@ -530,6 +562,16 @@ export default function PayrollView() {
         {!loading && employees.length === 0 && (
           <button className="pr-btn pr-btn-primary" onClick={handleSetup}>初期セットアップ（5名一括登録）</button>
         )}
+      </div>
+
+      <div style={{ marginTop: 24, textAlign: "center" }}>
+        <button
+          onClick={handleExportJson}
+          disabled={exporting}
+          style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 12, cursor: exporting ? "default" : "pointer", textDecoration: "underline" }}
+        >
+          {exporting ? "書き出し中..." : "JSON書き出し"}
+        </button>
       </div>
 
       {sheet?.type === "employeeForm" && (

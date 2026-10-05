@@ -55,7 +55,7 @@ export function autoCalcDeductions(employee, payroll) {
     rates.welfarePension;
 
   const taxBase = Math.max(0, totalPayment - p.advanceExpense - allSocialInsurance);
-  const incomeTax = calcWithholdingTax(taxBase, employee.dependents);
+  const incomeTax = calcWithholdingTax(taxBase, employee.dependents, payroll.yearMonth);
 
   return {
     employmentInsurance,

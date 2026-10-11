@@ -9,12 +9,19 @@ import {
   where,
 } from "firebase/firestore";
 import { payrollFirestore, PAYROLL_OWNER_UID } from "../firebasePayroll";
+import { migrateBonus, migrateBonusSettings } from "./bonus";
 
 function empCol() {
   return collection(payrollFirestore, "users", PAYROLL_OWNER_UID, "employees");
 }
 function payCol() {
   return collection(payrollFirestore, "users", PAYROLL_OWNER_UID, "payrolls");
+}
+function bonusCol() {
+  return collection(payrollFirestore, "users", PAYROLL_OWNER_UID, "bonuses");
+}
+function bonusSettingsRef() {
+  return doc(payrollFirestore, "users", PAYROLL_OWNER_UID, "settings", "bonus");
 }
 
 // ─── Employees ───────────────────────────────────────────────
@@ -69,4 +76,29 @@ export async function loadPrevPayroll(employeeId, yearMonth) {
 
 export async function deletePayroll(id) {
   await deleteDoc(doc(payCol(), id));
+}
+
+// ─── Bonuses（賞与。payrolls とは別コレクション） ─────────────
+
+export async function loadBonuses() {
+  const snap = await getDocs(bonusCol());
+  return snap.docs.map((d) => migrateBonus(d.data()));
+}
+
+export async function saveBonus(bonus) {
+  await setDoc(doc(bonusCol(), bonus.id), bonus);
+}
+
+export async function deleteBonus(id) {
+  await deleteDoc(doc(bonusCol(), id));
+}
+
+// 賞与の料率・上限の設定。ドキュメントが無いときは内蔵の初期値を返すだけで、書き込みはしない。
+export async function loadBonusSettings() {
+  const snap = await getDoc(bonusSettingsRef());
+  return migrateBonusSettings(snap.exists() ? snap.data() : null);
+}
+
+export async function saveBonusSettings(settings) {
+  await setDoc(bonusSettingsRef(), settings);
 }

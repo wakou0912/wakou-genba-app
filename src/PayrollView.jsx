@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   loadEmployees, loadEmployee, saveEmployee, deleteEmployee,
-  loadPayrolls, loadPayroll, loadPrevPayroll, savePayroll,
+  loadPayrolls, loadPayroll, loadPrevPayroll, savePayroll, loadBonuses,
 } from "./payrollCalc/firestoreData";
 import {
   buildInitialPayroll, autoCalcDeductions, calcTotalPayment, calcTotalDeduction, calcNetPay, defaultWorkingPeriod,
 } from "./payrollCalc/calculations";
 import { PAYROLL_OWNER_UID } from "./firebasePayroll";
+import BonusView from "./BonusView";
 
 /* ===================== スコープ済みCSS（プロトタイプのTailwindデザインをほぼそのまま移植） ===================== */
 const PR_CSS = `
@@ -75,6 +76,10 @@ const PR_CSS = `
   .pr-netpay-value{ font-size:28px; font-weight:800; }
   .pr-close{ background:none; border:none; cursor:pointer; color:#9ca3af; font-size:18px; }
   .pr-modal-title{ font-size:16px; font-weight:700; color:#1f2937; margin:0 0 14px; }
+  .pr-mode{ display:inline-flex; border:1px solid #d1d5db; border-radius:8px; overflow:hidden; margin-bottom:16px; }
+  .pr-mode button{ padding:8px 20px; border:0; background:#fff; color:#4b5563; font-size:14px; font-weight:600; cursor:pointer; }
+  .pr-mode button + button{ border-left:1px solid #d1d5db; }
+  .pr-mode button[aria-selected="true"]{ background:#1f2937; color:#fff; }
 `;
 
 function currentYearMonth() {
@@ -459,6 +464,7 @@ export default function PayrollView() {
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState(null); // {type:"employeeForm", employee} | {type:"payrollEditor", employeeId}
   const [exporting, setExporting] = useState(false);
+  const [mode, setMode] = useState("monthly"); // "monthly" | "bonus"
 
   const reload = useCallback(() => {
     Promise.all([loadEmployees(), loadPayrolls()]).then(([emps, prs]) => {
@@ -472,14 +478,14 @@ export default function PayrollView() {
   const handleExportJson = async () => {
     setExporting(true);
     try {
-      const [emps, prs] = await Promise.all([loadEmployees(), loadPayrolls()]);
+      const [emps, prs, bns] = await Promise.all([loadEmployees(), loadPayrolls(), loadBonuses()]);
       const payload = {
         format: "wakou-payroll-proto",
         schemaVersion: 1,
         exportedAt: new Date().toISOString(),
         employees: emps,
         payrolls: prs,
-        bonuses: [],
+        bonuses: bns,
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -522,6 +528,14 @@ export default function PayrollView() {
     <div className="pr-root" style={{ padding: 20, maxWidth: 720 }}>
       <style>{PR_CSS}</style>
 
+      <div className="pr-mode" role="tablist" aria-label="月給と賞与の切り替え">
+        <button role="tab" aria-selected={mode === "monthly"} onClick={() => setMode("monthly")}>月給</button>
+        <button role="tab" aria-selected={mode === "bonus"} onClick={() => setMode("bonus")}>賞与</button>
+      </div>
+
+      {mode === "bonus" ? (
+        loading ? <p style={{ color: "#9ca3af" }}>読み込み中...</p> : <BonusView employees={employees} payrolls={payrolls} />
+      ) : (<>
       <div className="pr-header">
         <h1 className="pr-title">給与明細一覧</h1>
         <div className="pr-month-nav">
@@ -573,6 +587,7 @@ export default function PayrollView() {
           {exporting ? "書き出し中..." : "JSON書き出し"}
         </button>
       </div>
+      </>)}
 
       {sheet?.type === "employeeForm" && (
         <EmployeeFormModal

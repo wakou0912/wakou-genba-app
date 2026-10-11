@@ -40,6 +40,88 @@ async function tryAddLogo(doc, x, y, w, h) {
   }
 }
 
+// 支給/控除の2列テーブル → 差引支給額の囲み → 備考欄（給与・賞与で共通）
+function drawTableAndFooter(doc, autoTable, FONT, kyuyo, kojo, totalPayment, totalDeduction, netPay, remarks, startY) {
+  const maxRows = Math.max(kyuyo.length, kojo.length);
+  const rows = [];
+  for (let i = 0; i < maxRows; i++) {
+    const left = kyuyo[i] ?? ["", ""];
+    const right = kojo[i] ?? ["", ""];
+    rows.push([left[0], left[1], right[0], right[1]]);
+  }
+  rows.push(["支給合計", fmtRequired(totalPayment), "控除合計", fmtRequired(totalDeduction)]);
+
+  autoTable(doc, {
+    startY,
+    head: [["支給項目", "金額（円）", "控除項目", "金額（円）"]],
+    body: rows,
+    theme: "grid",
+    // styles が全セル（ヘッダー含む）に適用される
+    styles: { font: FONT, fontStyle: "normal", fontSize: 10 },
+    headStyles: { fillColor: [50, 50, 50], textColor: 255 },
+    columnStyles: {
+      0: { cellWidth: 45 },
+      1: { cellWidth: 35, halign: "right" },
+      2: { cellWidth: 45 },
+      3: { cellWidth: 35, halign: "right" },
+    },
+    // セル描画直前にフォントを強制適用（autotable がフォントをリセットする場合の保険）
+    willDrawCell: () => {
+      doc.setFont(FONT, "normal");
+    },
+    margin: { left: 15, right: 15 },
+  });
+
+  const finalY = doc.lastAutoTable.finalY + 8;
+
+  // ─── 差引支給額 ─────────────────────────────────────────
+  doc.setFont(FONT, "normal");
+  doc.setDrawColor(50, 50, 50);
+  doc.setLineWidth(0.5);
+  doc.rect(15, finalY, 180, 18);
+  doc.setFontSize(12);
+  doc.text("差引支給額", 20, finalY + 7);
+  doc.setFontSize(22);
+  doc.text(`${netPay.toLocaleString("ja-JP")} 円`, 190, finalY + 13, { align: "right" });
+
+  // ─── 備考欄 ─────────────────────────────────────────────
+  const remarkY = finalY + 26;
+  const remarkH = 30;
+  doc.setFont(FONT, "normal");
+  doc.setFontSize(9);
+  doc.setDrawColor(100, 100, 100);
+  doc.setLineWidth(0.3);
+  doc.rect(15, remarkY, 180, remarkH);
+  doc.text("備考", 17, remarkY + 5);
+  // 罫線（3本）
+  const lineCount = 3;
+  for (let i = 1; i <= lineCount; i++) {
+    const ly = remarkY + (remarkH / (lineCount + 1)) * i;
+    doc.line(20, ly, 192, ly);
+  }
+  // 備考テキスト（入力があれば印刷）
+  if (remarks) {
+    doc.setFontSize(9);
+    doc.setFont(FONT, "normal");
+    const lines = doc.splitTextToSize(remarks, 168);
+    doc.text(lines, 20, remarkY + 10);
+  }
+}
+
+function outputPdf(doc, fileName, mode, previewWindow) {
+  if (mode === "preview") {
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    if (previewWindow) {
+      previewWindow.location.href = url;
+    } else {
+      window.open(url, "_blank");
+    }
+  } else {
+    doc.save(fileName);
+  }
+}
+
 export async function generatePayrollPDF(employee, payroll, mode = "download", previewWindow = null) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
@@ -121,81 +203,65 @@ export async function generatePayrollPDF(employee, payroll, mode = "download", p
   if (payroll.municipalTax > 0) kojo.push(["住民税", fmt(payroll.municipalTax)]);
   if (payroll.prepayment > 0) kojo.push(["前払金", fmt(payroll.prepayment)]);
 
-  const maxRows = Math.max(kyuyo.length, kojo.length);
-  const rows = [];
-  for (let i = 0; i < maxRows; i++) {
-    const left = kyuyo[i] ?? ["", ""];
-    const right = kojo[i] ?? ["", ""];
-    rows.push([left[0], left[1], right[0], right[1]]);
-  }
-  rows.push(["支給合計", fmtRequired(totalPayment), "控除合計", fmtRequired(totalDeduction)]);
-
-  autoTable(doc, {
-    startY: 52,
-    head: [["支給項目", "金額（円）", "控除項目", "金額（円）"]],
-    body: rows,
-    theme: "grid",
-    // styles が全セル（ヘッダー含む）に適用される
-    styles: { font: FONT, fontStyle: "normal", fontSize: 10 },
-    headStyles: { fillColor: [50, 50, 50], textColor: 255 },
-    columnStyles: {
-      0: { cellWidth: 45 },
-      1: { cellWidth: 35, halign: "right" },
-      2: { cellWidth: 45 },
-      3: { cellWidth: 35, halign: "right" },
-    },
-    // セル描画直前にフォントを強制適用（autotable がフォントをリセットする場合の保険）
-    willDrawCell: () => {
-      doc.setFont(FONT, "normal");
-    },
-    margin: { left: 15, right: 15 },
-  });
-
-  const finalY = doc.lastAutoTable.finalY + 8;
-
-  // ─── 差引支給額 ─────────────────────────────────────────
-  doc.setFont(FONT, "normal");
-  doc.setDrawColor(50, 50, 50);
-  doc.setLineWidth(0.5);
-  doc.rect(15, finalY, 180, 18);
-  doc.setFontSize(12);
-  doc.text("差引支給額", 20, finalY + 7);
-  doc.setFontSize(22);
-  doc.text(`${netPay.toLocaleString("ja-JP")} 円`, 190, finalY + 13, { align: "right" });
-
-  // ─── 備考欄 ─────────────────────────────────────────────
-  const remarkY = finalY + 26;
-  const remarkH = 30;
-  doc.setFont(FONT, "normal");
-  doc.setFontSize(9);
-  doc.setDrawColor(100, 100, 100);
-  doc.setLineWidth(0.3);
-  doc.rect(15, remarkY, 180, remarkH);
-  doc.text("備考", 17, remarkY + 5);
-  // 罫線（3本）
-  const lineCount = 3;
-  for (let i = 1; i <= lineCount; i++) {
-    const ly = remarkY + (remarkH / (lineCount + 1)) * i;
-    doc.line(20, ly, 192, ly);
-  }
-  // 備考テキスト（入力があれば印刷）
-  if (payroll.remarks) {
-    doc.setFontSize(9);
-    doc.setFont(FONT, "normal");
-    const lines = doc.splitTextToSize(payroll.remarks, 168);
-    doc.text(lines, 20, remarkY + 10);
-  }
+  drawTableAndFooter(doc, autoTable, FONT, kyuyo, kojo, totalPayment, totalDeduction, netPay, payroll.remarks, 52);
 
   const fileName = `${employee.name}_${payroll.yearMonth}_${payroll.isBonus ? "賞与" : "給与"}.pdf`;
-  if (mode === "preview") {
-    const blob = doc.output("blob");
-    const url = URL.createObjectURL(blob);
-    if (previewWindow) {
-      previewWindow.location.href = url;
-    } else {
-      window.open(url, "_blank");
-    }
-  } else {
-    doc.save(fileName);
-  }
+  outputPdf(doc, fileName, mode, previewWindow);
+}
+
+// 賞与支払明細書。給与明細と同じ並びで、支給は賞与1行、標準報酬月額の代わりに標準賞与額を印字する。
+export async function generateBonusPDF(employee, bonus, mode = "download", previewWindow = null) {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+  await loadJapaneseFont(doc);
+
+  const FONT = "NotoSansJP";
+
+  const [year, month, day] = bonus.payDate.split("-");
+  const dateLabel = `${year}年${parseInt(month)}月${parseInt(day)}日`;
+
+  const socialInsurance =
+    bonus.employmentInsurance +
+    bonus.healthInsurance +
+    bonus.longTermCareInsurance +
+    bonus.childcareSupport +
+    bonus.welfarePension;
+  const taxBase = bonus.bonusAmount - socialInsurance;
+
+  // ─── ヘッダー ───────────────────────────────────────────
+  doc.setFont(FONT, "normal");
+  doc.setFontSize(18);
+  doc.text("賞与支払明細書", 105, 20, { align: "center" });
+
+  await tryAddLogo(doc, 15, 25, 17, 8);
+
+  doc.setFontSize(11);
+  doc.text("株式会社 ワコウ", 34, 30);
+  doc.text(dateLabel, 195, 30, { align: "right" });
+
+  doc.setFontSize(12);
+  doc.text(`${employee.name} 殿`, 15, 40);
+
+  doc.setFontSize(9);
+  doc.text(`課税対象額：${taxBase.toLocaleString("ja-JP")} 円`, 125, 36);
+  doc.text(`標準賞与額：${bonus.standardBonus.toLocaleString("ja-JP")} 円`, 125, 42);
+  doc.text(`扶養親族等の数：${bonus.dependents} 人`, 125, 48);
+
+  // ─── 支給・控除テーブル ─────────────────────────────────
+  const kyuyo = [[bonus.bonusName || "賞与", fmt(bonus.bonusAmount)]];
+  const kojo = [];
+  if (bonus.employmentInsurance > 0) kojo.push(["雇用保険料", fmt(bonus.employmentInsurance)]);
+  if (bonus.healthInsurance > 0) kojo.push(["健康保険料", fmt(bonus.healthInsurance)]);
+  if (bonus.longTermCareInsurance > 0) kojo.push(["介護保険料", fmt(bonus.longTermCareInsurance)]);
+  if (bonus.childcareSupport > 0) kojo.push(["子ども・子育て支援金", fmt(bonus.childcareSupport)]);
+  if (bonus.welfarePension > 0) kojo.push(["厚生年金保険料", fmt(bonus.welfarePension)]);
+  if (bonus.incomeTax > 0) kojo.push(["源泉所得税", fmt(bonus.incomeTax)]);
+
+  drawTableAndFooter(doc, autoTable, FONT, kyuyo, kojo, bonus.bonusAmount, bonus.totalDeduction, bonus.netPay, bonus.remarks, 52);
+
+  const fileName = `${employee.name}_${bonus.payDate}_${bonus.bonusName || "賞与"}.pdf`;
+  outputPdf(doc, fileName, mode, previewWindow);
 }

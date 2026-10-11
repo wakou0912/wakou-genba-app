@@ -70,3 +70,12 @@
 - 計算ロジック（`src/payrollCalc/`: calculations/insurance/tax/pdf/firestoreData）はwako-payrollのTypeScriptコードをほぼそのままJSに移植したもの。保険料率テーブルや源泉徴収税額表を更新する際は、元のwako-payroll側（`~/wako-payroll/lib/`）も両方直す必要がある（今のところ自動同期の仕組みはない）。
 - PDF出力は`jspdf`+`jspdf-autotable`を新規追加して使用（他のタブはwindow.print()方式だが、給与明細は書式の正確さ重視でプロトタイプ通りjsPDF方式を踏襲）。フォント(`public/fonts/NotoSansJP-Regular.ttf`)とロゴ(`public/payroll-logo.jpg`)が必要。
 - スタンドアロン版wako-payrollアプリ（Netlify）は今まで通りFirebase Authログインが必要なまま。同じデータを2つの入口（現場日報アプリのタブ／wako-payroll単体）から見に行く構成。
+
+### 賞与（給与明細タブの「賞与」切り替え／BonusView.jsx）
+
+2026-10-11、賞与明細プロト（claude.ai アーティファクト「賞与明細プロト」）から移植。
+- 保存先は `users/{PAYROLL_OWNER_UID}/bonuses/{id}`（月給の `payrolls` とは別コレクション。wako-payroll（Netlify版）は触らないので上書きされない）。
+- 料率・上限・会社負担の設定は `users/{PAYROLL_OWNER_UID}/settings/bonus`。ドキュメントが無いときは `payrollCalc/bonus.js` の `DEFAULT_SETTINGS` を使うだけで、書き込みは料率タブの「料率を保存」を押したときだけ。
+- 計算は `payrollCalc/bonus.js`（純関数）。源泉所得税は令和8年分の算出率表。前月給与なし／10倍超は月額表の特例（tax.js の `calcWithholdingTax`）で自動計算。令和9年分の算出率表は公表後に `BONUS_TAX_TABLES` に足す。
+- 削除はゴミ箱（`deletedAt`）。30日を過ぎると表示しないだけで、自動では消さない。
+- 「会社の総額」は保存済みの賞与から表示時に計算（`calcEmployerCost`）。雇用保険の事業主負担・子ども子育て拠出金・労災は料率タブで変更可。

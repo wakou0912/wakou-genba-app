@@ -43,7 +43,7 @@ export function calc(r) {
   if (!r.outAt) return { span: 0, work: 0, ot: 0, night: 0, open: true };
   const a = toMin(r.inAt);
   let b = toMin(r.outAt);
-  if (b <= a) b += 1440;
+  if (b < a) b += 1440; // 退勤が出勤より前のときだけ日またぎ（夜勤）。同じ分なら 0 分
   const span = b - a;
   const work = Math.max(0, span - (r.breakMin || 0));
   let night = 0;

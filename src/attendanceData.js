@@ -111,6 +111,25 @@ export const rejectDevice = (worker, deviceId) => runTransaction(firestore, asyn
   writeDev(tx, worker, devices, pending.filter(d => d.deviceId !== deviceId));
 });
 
+// ログイン時の端末チェック（作業員ログイン用）
+//  ok        … この端末は登録済み、または1台目として今登録した
+//  requested … 管理者の承認待ち
+//  blocked   … 別の端末が登録済み（追加の依頼が必要）
+export const checkLoginDevice = worker => runTransaction(firestore, async tx => {
+  const id = getDeviceId();
+  const { devices, pending } = await readDev(tx, worker);
+  if (devices.some(d => d.deviceId === id)) return "ok";
+  if (devices.length === 0) { writeDev(tx, worker, [{ deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending.filter(d => d.deviceId !== id)); return "ok"; }
+  return pending.some(d => d.deviceId === id) ? "requested" : "blocked";
+});
+// ログイン画面から、この端末の追加を管理者に依頼する
+export const requestLoginDevice = worker => runTransaction(firestore, async tx => {
+  const id = getDeviceId();
+  const { devices, pending } = await readDev(tx, worker);
+  if (devices.some(d => d.deviceId === id) || pending.some(d => d.deviceId === id)) return;
+  writeDev(tx, worker, devices, [...pending, { deviceId: id, label: deviceLabel(), requestedAt: new Date().toISOString() }]);
+});
+
 const DEV_KEY = "wakou-attendance-device";
 function getDeviceId() {
   try {

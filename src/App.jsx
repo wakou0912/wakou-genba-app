@@ -2004,7 +2004,7 @@ function BestReportView({db, setDb, showMsg, isAdmin, allRows, user}) {
 }
 
 function WorkerView({user, db, setDb, onLogout}) {
-  const [workerTab, setWorkerTab] = useState("list");
+  const [workerTab, setWorkerTab] = useState("attendance");
   const [editRow, setEditRow] = useState(null);
   const [msg, setMsg] = useState("");
   const [searchGenba, setSearchGenba] = useState("");

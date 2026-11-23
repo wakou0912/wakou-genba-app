@@ -86,6 +86,7 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
   const [clock, setClock] = useState(new Date());
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ask, setAsk] = useState(null); // 出勤・退勤の確認ダイアログ（"in" | "out"）
   const [editing, setEditing] = useState(undefined); // undefined=閉, null=新規, rec=修正
   const [month, setMonth] = useState(isoDate().slice(0, 7));
   const hist = useAttendanceMonth(month);
@@ -111,16 +112,34 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
         <div style={{ textAlign: "center", fontSize: 44, fontWeight: 800, letterSpacing: 2, fontVariantNumeric: "tabular-nums", color: "#fff" }}>{hm(clock)}:{pad(clock.getSeconds())}</div>
         {att.open && <div style={{ textAlign: "center", marginTop: 4, fontSize: 13 }}><span style={{ color: C.ok, fontWeight: 700 }}>勤務中</span> {att.open.inAt}〜</div>}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-          <button disabled={busy || !!att.open || att.status !== "ok"} onClick={() => run(async () => { const r = await att.punch("in", memo); setMemo(""); onMsg?.(`出勤 ${r.inAt}`); })}
+          <button disabled={busy || !!att.open || att.status !== "ok"} onClick={() => setAsk("in")}
             style={{ ...btn, padding: "24px 8px", fontSize: 22, fontWeight: 800, background: "#14894f", color: "#fff", borderRadius: 14, opacity: busy || att.open || att.status !== "ok" ? 0.35 : 1 }}>
             出勤
           </button>
-          <button disabled={busy || !att.open || att.status !== "ok"} onClick={() => run(async () => { const r = await att.punch("out"); onMsg?.(`退勤 ${r.outAt}`); })}
+          <button disabled={busy || !att.open || att.status !== "ok"} onClick={() => setAsk("out")}
             style={{ ...btn, padding: "24px 8px", fontSize: 22, fontWeight: 800, background: "#d33a3a", color: "#fff", borderRadius: 14, opacity: busy || !att.open || att.status !== "ok" ? 0.35 : 1 }}>退勤</button>
         </div>
         <input value={memo} onChange={e => setMemo(e.target.value)} disabled={!!att.open} placeholder="メモ（任意）" style={{ ...inp, width: "100%", marginTop: 10 }} />
         <div style={{ color: C.sub, fontSize: 11, marginTop: 8 }}>1日1回、出勤と退勤を押すだけ。現場ごとに押す必要はないよ。</div>
       </div>
+
+      {ask && (
+        <Modal onClose={() => setAsk(null)}>
+          <div style={{ textAlign: "center", padding: "6px 0 14px" }}>
+            <div style={{ color: C.sub, fontSize: 12 }}>{clock.getMonth() + 1}月{clock.getDate()}日（{WD[clock.getDay()]}）</div>
+            <div style={{ fontSize: 40, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{hm(clock)}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6, color: ask === "in" ? "#66bb6a" : "#ef5350" }}>{ask === "in" ? "出勤" : "退勤"}しますか？</div>
+            {ask === "in" && memo && <div style={{ color: C.sub, fontSize: 12, marginTop: 6 }}>メモ：{memo}</div>}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button onClick={() => setAsk(null)} style={{ ...btn, padding: "14px 8px", fontSize: 15, background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>やめる</button>
+            <button disabled={busy} onClick={() => { const k = ask; setAsk(null); run(async () => {
+              if (k === "in") { const r = await att.punch("in", memo); setMemo(""); onMsg?.(`出勤 ${r.inAt}`); }
+              else { const r = await att.punch("out"); onMsg?.(`退勤 ${r.outAt}`); }
+            }); }} style={{ ...btn, padding: "14px 8px", fontSize: 15, fontWeight: 800, background: ask === "in" ? "#14894f" : "#d33a3a", color: "#fff" }}>{ask === "in" ? "出勤する" : "退勤する"}</button>
+          </div>
+        </Modal>
+      )}
 
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録</div>

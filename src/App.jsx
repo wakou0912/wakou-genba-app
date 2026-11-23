@@ -1430,8 +1430,8 @@ function Login({onLogin, db={}, onSave, extraCoworkers=[]}) {
                 </button>
               ))}
             </div>
-            <button onClick={()=>setAdminMode(true)} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid #1a2634",background:"transparent",color:"#263238",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-              管理者ログイン →
+            <button onClick={()=>import.meta.env.DEV ? onLogin({role:"admin",name:"管理者"}) : setAdminMode(true)} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid #1a2634",background:"transparent",color:"#263238",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              管理者ログイン{import.meta.env.DEV?"（開発モード・パスワードなし）":""} →
             </button>
             <button onClick={()=>setInfoShareMode(true)}
               style={{width:"100%",marginTop:10,padding:"10px",borderRadius:8,border:"1px solid #1a3a1a",background:"#0a1f0a",color:"#a5d6a7",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4850,7 +4850,7 @@ export default function App() {
   const [db, setDb] = useState(()=>lsLoad());
   const [session, setSession] = useState(()=>{try{const s=sessionStorage.getItem("session");return s?JSON.parse(s):null;}catch{return null;}});
   const [synced, setSynced] = useState(false);
-  const [gateOk, setGateOk] = useState(()=>sessionStorage.getItem("gateOk")==="1");
+  const [gateOk, setGateOk] = useState(()=>import.meta.env.DEV || sessionStorage.getItem("gateOk")==="1"); // DEV=npm run dev のときだけ。本番ビルドは false
   const dbRef = useRef(db);
   useEffect(()=>{ dbRef.current = db; },[db]);
 

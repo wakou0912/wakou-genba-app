@@ -78,7 +78,7 @@ export function useAttendanceMonth(ym) {
 }
 
 // 1人あたり登録できる端末の数
-export const MAX_DEVICES = 3;
+export const MAX_DEVICES = 1; // 自分で登録できるのは1台目だけ。2台目以降は管理者の承認
 // 端末ドキュメント → 端末の配列。昔の形式（deviceId が1つだけ）も読める
 export const devicesOf = data => !data ? [] : Array.isArray(data.devices) ? data.devices : data.deviceId ? [{ deviceId: data.deviceId, boundAt: data.boundAt || null, label: "" }] : [];
 function deviceLabel() {
@@ -97,7 +97,7 @@ export const unbindDevice = (worker, deviceId) => runTransaction(firestore, asyn
   const { devices, pending } = await readDev(tx, worker);
   writeDev(tx, worker, devices.filter(d => d.deviceId !== deviceId), pending);
 });
-// 管理者用：追加依頼を承認する（3台を超えても登録できる）
+// 管理者用：追加依頼を承認する（自動登録の上限を超えても登録できる）
 export const approveDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
   const { devices, pending } = await readDev(tx, worker);
   const req = pending.find(d => d.deviceId === deviceId);
@@ -156,14 +156,14 @@ export function useMyAttendance(userName) {
   }, [userName, devTick]);
   const devices = devicesOf(dev.data);
   const pending = pendingOf(dev.data);
-  // ok=この端末は登録済み / unbound=まだ登録できる / full=3台いっぱい（追加は管理者に依頼） / requested=管理者の承認待ち
+  // ok=この端末は登録済み / unbound=まだ登録できる / full=自動登録の枠いっぱい（追加は管理者に依頼） / requested=管理者の承認待ち
   const status = dev.loading ? "loading" : dev.error ? "error"
     : devices.some(d => d.deviceId === devId) ? "ok"
     : pending.some(d => d.deviceId === devId) ? "requested"
     : devices.length < MAX_DEVICES ? "unbound" : "full";
 
   const bind = async () => {
-    // 同時に2台が登録しても3台を超えないように、トランザクションで読んで書く
+    // 同時に2台が登録しても上限を超えないように、トランザクションで読んで書く
     const merged = await runTransaction(firestore, async tx => {
       const { devices: cur, pending: pen } = await readDev(tx, userName);
       if (cur.some(d => d.deviceId === devId)) return { devices: cur, pending: pen };

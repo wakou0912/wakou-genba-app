@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, MAX_DEVICES, devicesOf, pendingOf, unbindDevice, approveDevice, rejectDevice } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, devicesOf, pendingOf, unbindDevice, approveDevice, rejectDevice } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -125,10 +125,10 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録</div>
         {att.status === "loading" && <div style={{ color: C.sub, fontSize: 12 }}>確認中…</div>}
-        {att.status === "ok" && <div style={{ color: C.ok, fontSize: 12 }}>✓ この端末は {userName} の端末として登録済み（{att.devices.length}/{MAX_DEVICES}台）</div>}
+        {att.status === "ok" && <div style={{ color: C.ok, fontSize: 12 }}>✓ この端末は {userName} の端末として登録済み（{att.devices.length}台登録中）</div>}
         {att.status === "full" && (
           <>
-            <div style={{ color: C.ng, fontSize: 12, marginBottom: 8 }}>すでに {MAX_DEVICES} 台が登録されていて、この端末は自分では登録できません。古い端末を解除してもらうか、管理者に追加を依頼してね。</div>
+            <div style={{ color: C.ng, fontSize: 12, marginBottom: 8 }}>すでに別の端末が登録されています。この端末を使うには、管理者に追加を依頼してね（機種変更のときは、古い端末の解除を頼んでもOK）。</div>
             <button onClick={() => run(async () => { await att.requestAdd(); onMsg?.("管理者に追加を依頼しました"); })} style={{ ...btn, background: C.pri, color: "#080e14" }}>管理者にこの端末の追加を依頼</button>
           </>
         )}
@@ -141,7 +141,7 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
         {att.status === "error" && <div style={{ color: C.ng, fontSize: 12 }}>端末情報を読めませんでした: {att.devError}</div>}
         {att.status === "unbound" && (
           <>
-            <div style={{ color: C.sub, fontSize: 12, marginBottom: 8 }}>打刻する前に、この端末を {userName} の端末として登録します（なりすまし防止。{MAX_DEVICES}台まで登録できる／いま {att.devices.length} 台）。</div>
+            <div style={{ color: C.sub, fontSize: 12, marginBottom: 8 }}>打刻する前に、この端末を {userName} の端末として登録します（なりすまし防止。1台目は自分で登録できる。2台目以降は管理者の承認が必要）。</div>
             <button onClick={() => run(async () => { await att.bind(); onMsg?.("端末を登録しました"); })} style={{ ...btn, background: C.pri, color: "#080e14" }}>この端末を {userName} に登録</button>
           </>
         )}
@@ -309,7 +309,7 @@ export function AttendanceAdminTab({ workers, onMsg }) {
           <div key={w} style={{ padding: "5px 0", fontSize: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 90 }}>{w}</span>
-              <span style={{ color: devs[w] && devs[w].length ? C.ok : C.sub }}>{devs[w] === null ? "確認できません" : devs[w] === undefined ? "確認中…" : devs[w].length ? `${devs[w].length}/${MAX_DEVICES}台 登録済み` : `未登録（0/${MAX_DEVICES}台）`}</span>
+              <span style={{ color: devs[w] && devs[w].length ? C.ok : C.sub }}>{devs[w] === null ? "確認できません" : devs[w] === undefined ? "確認中…" : devs[w].length ? `${devs[w].length}台 登録済み` : `未登録`}</span>
             </div>
             {(devs[w] || []).map(d => (
               <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 98px", fontSize: 12 }}>

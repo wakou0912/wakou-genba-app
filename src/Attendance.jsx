@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, deleteDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, MAX_DEVICES, devicesOf, unbindDevice } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -125,12 +125,12 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録</div>
         {att.status === "loading" && <div style={{ color: C.sub, fontSize: 12 }}>確認中…</div>}
-        {att.status === "ok" && <div style={{ color: C.ok, fontSize: 12 }}>✓ この端末は {userName} の端末として登録済み</div>}
-        {att.status === "other" && <div style={{ color: C.ng, fontSize: 12 }}>この端末は {userName} の端末として登録されていません。別の端末で登録済みです。端末を変えた場合は管理者に「端末解除」を頼んでね。</div>}
+        {att.status === "ok" && <div style={{ color: C.ok, fontSize: 12 }}>✓ この端末は {userName} の端末として登録済み（{att.devices.length}/{MAX_DEVICES}台）</div>}
+        {att.status === "full" && <div style={{ color: C.ng, fontSize: 12 }}>すでに {MAX_DEVICES} 台が登録されていて、この端末は登録できません。端末を変えたときは、管理者に「端末解除」を頼んでね。</div>}
         {att.status === "error" && <div style={{ color: C.ng, fontSize: 12 }}>端末情報を読めませんでした: {att.devError}</div>}
         {att.status === "unbound" && (
           <>
-            <div style={{ color: C.sub, fontSize: 12, marginBottom: 8 }}>打刻する前に、この端末を {userName} の端末として登録します（なりすまし防止）。</div>
+            <div style={{ color: C.sub, fontSize: 12, marginBottom: 8 }}>打刻する前に、この端末を {userName} の端末として登録します（なりすまし防止。{MAX_DEVICES}台まで登録できる／いま {att.devices.length} 台）。</div>
             <button onClick={() => run(async () => { await att.bind(); onMsg?.("端末を登録しました"); })} style={{ ...btn, background: C.pri, color: "#080e14" }}>この端末を {userName} に登録</button>
           </>
         )}
@@ -199,7 +199,7 @@ export function AttendanceAdminTab({ workers, onMsg }) {
 
   useEffect(() => {
     let alive = true;
-    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, s.exists()]).catch(() => [w, null])))
+    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null)]).catch(() => [w, null])))
       .then(a => alive && setDevs(Object.fromEntries(a)));
     return () => { alive = false; };
   }, [workers, devTick]);
@@ -217,7 +217,7 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const fail = e => onMsg?.("⚠ " + (e.message || e));
   const del = async r => { try { await saveRecord({ ...r, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); onMsg?.("ゴミ箱へ移動しました"); } catch (e) { fail(e); } };
   const restore = async r => { try { await saveRecord({ ...r, deletedAt: null, updatedAt: new Date().toISOString() }); onMsg?.("戻しました"); } catch (e) { fail(e); } };
-  const unbind = async w => { try { await deleteDoc(doc(firestore, "attendance_devices", w)); setDevTick(x => x + 1); onMsg?.(`${w} の端末登録を解除しました`); } catch (e) { fail(e); } };
+  const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
 
   const showText = (title, text) => {
     try { navigator.clipboard.writeText(text).then(() => onMsg?.(title + "をコピーしました"), () => setCopy({ title, text })); } catch { setCopy({ title, text }); }
@@ -292,10 +292,17 @@ export function AttendanceAdminTab({ workers, onMsg }) {
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録状況</div>
         {workers.map(w => (
-          <div key={w} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13 }}>
-            <span style={{ width: 90 }}>{w}</span>
-            <span style={{ flex: 1, color: devs[w] ? C.ok : C.sub }}>{devs[w] === null ? "確認できません" : devs[w] ? "登録済み" : "未登録"}</span>
-            {devs[w] && <button onClick={() => unbind(w)} style={{ ...btn, padding: "4px 10px", background: "transparent", color: C.ng, border: `1px solid ${C.line}` }}>端末解除</button>}
+          <div key={w} style={{ padding: "5px 0", fontSize: 13 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 90 }}>{w}</span>
+              <span style={{ color: devs[w] && devs[w].length ? C.ok : C.sub }}>{devs[w] === null ? "確認できません" : devs[w] === undefined ? "確認中…" : devs[w].length ? `${devs[w].length}/${MAX_DEVICES}台 登録済み` : `未登録（0/${MAX_DEVICES}台）`}</span>
+            </div>
+            {(devs[w] || []).map(d => (
+              <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 98px", fontSize: 12 }}>
+                <span style={{ flex: 1, color: C.sub }}>{d.label || "端末"}{d.boundAt ? `\u3000${dayLabel(d.boundAt.slice(0, 10))}に登録` : ""}&emsp;<span style={{ fontSize: 10 }}>…{d.deviceId.slice(-5)}</span></span>
+                <button onClick={() => unbind(w, d.deviceId)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.ng, border: `1px solid ${C.line}` }}>解除</button>
+              </div>
+            ))}
           </div>
         ))}
       </div>

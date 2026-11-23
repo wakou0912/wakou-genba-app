@@ -3,7 +3,7 @@
 //
 // ■ 保存先（現場日報の db/main には一切書かない。別コレクション）
 //   attendance/{yyyy-mm}/records/{id}  … 打刻1件ずつ（1件=1ドキュメント。配列ごと上書きしない）
-//   attendance_devices/{作業員名}       … 端末の紐付け
+//   attendance_devices/{作業員名}       … 端末の紐付け {worker, devices:[{deviceId, boundAt, label}]}（1人 MAX_DEVICES 台まで）
 //
 // ■ 打刻レコード
 //   { id, worker, date:'YYYY-MM-DD', inAt:'HH:MM', outAt:'HH:MM'|null,
@@ -14,7 +14,7 @@
 //   Firestore への書き込みは、打刻・修正・端末登録などユーザーの明示操作のときだけ。
 //   「無ければ作る」系の自動書き込みはしない（CLAUDE.md のデータ消失事故の教訓）。
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, setDoc, runTransaction } from "firebase/firestore";
 import { firestore } from "./firebase";
 
 // ─── ユーティリティ ───────────────────────────────
@@ -76,6 +76,24 @@ export function useAttendanceMonth(ym) {
   return st.ym === ym ? st : { ym, records: [], error: null, loading: true };
 }
 
+// 1人あたり登録できる端末の数
+export const MAX_DEVICES = 3;
+// 端末ドキュメント → 端末の配列。昔の形式（deviceId が1つだけ）も読める
+export const devicesOf = data => !data ? [] : Array.isArray(data.devices) ? data.devices : data.deviceId ? [{ deviceId: data.deviceId, boundAt: data.boundAt || null, label: "" }] : [];
+function deviceLabel() {
+  const u = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  return /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Windows/.test(u) ? "Windows" : /Mac/.test(u) ? "Mac" : "端末";
+}
+// 管理者用：端末を1台だけ解除する
+export const unbindDevice = (worker, deviceId) => {
+  const ref = doc(firestore, "attendance_devices", worker);
+  return runTransaction(firestore, async tx => {
+    const snap = await tx.get(ref);
+    const next = devicesOf(snap.exists() ? snap.data() : null).filter(d => d.deviceId !== deviceId);
+    tx.set(ref, { worker, devices: next });
+  });
+};
+
 const DEV_KEY = "wakou-attendance-device";
 function getDeviceId() {
   try {
@@ -118,11 +136,23 @@ export function useMyAttendance(userName) {
       .catch(e => alive && setDev({ loading: false, data: null, error: e.message || String(e) }));
     return () => { alive = false; };
   }, [userName]);
-  const status = dev.loading ? "loading" : dev.error ? "error" : !dev.data ? "unbound" : dev.data.deviceId === devId ? "ok" : "other";
+  const devices = devicesOf(dev.data);
+  // ok=この端末は登録済み / unbound=まだ登録できる / full=3台いっぱいで登録できない
+  const status = dev.loading ? "loading" : dev.error ? "error" : devices.some(d => d.deviceId === devId) ? "ok" : devices.length < MAX_DEVICES ? "unbound" : "full";
 
   const bind = async () => {
-    await setDoc(doc(firestore, "attendance_devices", userName), { worker: userName, deviceId: devId, boundAt: new Date().toISOString() });
-    setDev({ loading: false, data: { deviceId: devId }, error: null });
+    const ref = doc(firestore, "attendance_devices", userName);
+    // 同時に2台が登録しても3台を超えないように、トランザクションで読んで書く
+    const merged = await runTransaction(firestore, async tx => {
+      const snap = await tx.get(ref);
+      const cur = devicesOf(snap.exists() ? snap.data() : null);
+      if (cur.some(d => d.deviceId === devId)) return cur;
+      if (cur.length >= MAX_DEVICES) throw new Error(`すでに${MAX_DEVICES}台が登録されています。管理者に「端末解除」を頼んでね`);
+      const next = [...cur, { deviceId: devId, boundAt: new Date().toISOString(), label: deviceLabel() }];
+      tx.set(ref, { worker: userName, devices: next });
+      return next;
+    });
+    setDev({ loading: false, data: { devices: merged }, error: null });
   };
 
   // kind: "in" | "out" / memo: 任意のメモ
@@ -147,6 +177,6 @@ export function useMyAttendance(userName) {
     return next;
   };
 
-  return { records, open, status, devError: dev.error, bind, punch, error: a.error || b.error };
+  return { records, open, status, devices, devError: dev.error, bind, punch, error: a.error || b.error };
 }
 

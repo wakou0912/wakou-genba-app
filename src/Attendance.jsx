@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, deleteDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -23,6 +23,23 @@ function Modal({ children, onClose }) {
   );
 }
 const dayLabel = iso => { const [y, m, d] = iso.split("-").map(Number); return `${m}/${d}（${WD[new Date(y, m - 1, d).getDay()]}）`; };
+
+// ─── 日報の日付・カードに出す、その日の出退勤（表示だけ。ボタンなし）─────────────
+// date は日報の日付（"2026/11/23" など）。同じ日の打刻を「最初の出勤〜最後の退勤」でまとめて出す。
+export function AttendanceDayChip({ records, worker, date, style }) {
+  const iso = normDate(date);
+  const rs = (records || []).filter(r => r.worker === worker && r.date === iso && isLive(r)).sort((a, b) => a.inAt.localeCompare(b.inAt));
+  if (rs.length === 0) return null;
+  const first = rs[0];
+  const last = rs[rs.length - 1];
+  const open = rs.some(r => !r.outAt);
+  const work = rs.reduce((a, r) => a + calc(r).work, 0);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#0a1f0a", color: "#a5d6a7", border: "1px solid #1a3a1a", borderRadius: 5, padding: "2px 8px", fontSize: 11, fontWeight: 700, ...style }}>
+      ⏱ {first.inAt}〜{open ? "勤務中" : last.outAt}{!open && <span style={{ color: C.sub, fontWeight: 400 }}>（実働 {fmtHM(work)}）</span>}
+    </span>
+  );
+}
 
 // ─── 記録の修正／手入力追加 ───────────────────────
 function EditModal({ rec, workers, isAdmin, defaultWorker, onClose, onDone, onError }) {

@@ -133,6 +133,14 @@ export const registerAdminDevice = () => runTransaction(firestore, async tx => {
   if (devices.some(d => d.deviceId === id)) return;
   tx.set(devRef(ADMIN_DEV_DOC), { worker: ADMIN_DEV_DOC, devices: [...devices, { deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending: [] }, { merge: true });
 });
+// 管理者が「次の1台を許可」している間に、新しい端末で管理者ログインしたら、その端末を管理者端末として登録する（許可は使い切り）
+export const claimAdminDeviceIfAllowed = () => runTransaction(firestore, async tx => {
+  const id = getDeviceId();
+  const { devices, allow } = await readDev(tx, ADMIN_DEV_DOC);
+  if (!allow || devices.some(d => d.deviceId === id)) return false;
+  tx.set(devRef(ADMIN_DEV_DOC), { worker: ADMIN_DEV_DOC, devices: [...devices, { deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending: [], allowUntil: null }, { merge: true });
+  return true;
+});
 export const unbindAdminDevice = deviceId => runTransaction(firestore, async tx => {
   const { devices } = await readDev(tx, ADMIN_DEV_DOC);
   tx.set(devRef(ADMIN_DEV_DOC), { worker: ADMIN_DEV_DOC, devices: devices.filter(d => d.deviceId !== deviceId), pending: [] }, { merge: true });

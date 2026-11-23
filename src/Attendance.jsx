@@ -340,11 +340,12 @@ export function DeviceAdminTab({ workers, onMsg }) {
   const [pend, setPend] = useState({});
   const [allow, setAllow] = useState({});
   const [adminDevs, setAdminDevs] = useState(undefined);
+  const [adminAllow, setAdminAllow] = useState(null);
   const fail = e => onMsg?.("⚠ " + (e.message || e));
 
   useEffect(() => {
     let alive = true;
-    getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC)).then(s => alive && setAdminDevs(devicesOf(s.exists() ? s.data() : null))).catch(() => alive && setAdminDevs(null));
+    getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC)).then(s => { if (!alive) return; setAdminDevs(devicesOf(s.exists() ? s.data() : null)); setAdminAllow(allowOf(s.exists() ? s.data() : null)); }).catch(() => alive && setAdminDevs(null));
     Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null), allowOf(s.exists() ? s.data() : null)]).catch(() => [w, null, [], null])))
       .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); setAllow(Object.fromEntries(a.map(x => [x[0], x[3]]))); });
     return () => { alive = false; };
@@ -355,6 +356,8 @@ export function DeviceAdminTab({ workers, onMsg }) {
   const allowNext = async w => { try { await allowNextDevice(w, 30); setDevTick(x => x + 1); onMsg?.(`${w} の次の1台を30分だけ許可しました`); } catch (e) { fail(e); } };
   const cancelAllowing = async w => { try { await cancelAllow(w); setDevTick(x => x + 1); onMsg?.(`${w} の許可を取り消しました`); } catch (e) { fail(e); } };
   const addAdminDev = async () => { try { await registerAdminDevice(); setDevTick(x => x + 1); onMsg?.("この端末を管理者端末に登録しました"); } catch (e) { fail(e); } };
+  const allowAdminNext = async () => { try { await allowNextDevice(ADMIN_DEV_DOC, 30); setDevTick(x => x + 1); onMsg?.("管理者端末の次の1台を30分だけ許可しました"); } catch (e) { fail(e); } };
+  const cancelAdminAllow = async () => { try { await cancelAllow(ADMIN_DEV_DOC); setDevTick(x => x + 1); onMsg?.("許可を取り消しました"); } catch (e) { fail(e); } };
   const delAdminDev = async id => { try { await unbindAdminDevice(id); setDevTick(x => x + 1); onMsg?.("管理者端末を1台解除しました"); } catch (e) { fail(e); } };
   const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
   const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
@@ -368,6 +371,12 @@ export function DeviceAdminTab({ workers, onMsg }) {
             <span style={{ width: 90, fontWeight: 700 }}>管理者端末</span>
             <span style={{ color: adminDevs && adminDevs.length ? C.ok : C.sub, flex: 1 }}>{adminDevs === null ? "確認できません" : adminDevs === undefined ? "確認中…" : adminDevs.length ? `${adminDevs.length}台（どの作業員にもログインできる）` : "未登録"}</span>
             {adminDevs && !adminDevs.some(d => d.deviceId === myDeviceId()) && <button onClick={addAdminDev} style={{ ...btn, padding: "3px 10px", background: C.pri, color: "#080e14" }}>この端末を登録</button>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0 4px 98px", fontSize: 12 }}>
+            {adminAllow
+              ? <><span style={{ flex: 1, color: C.warn }}>🔓 許可中（{new Date(adminAllow).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}まで・新しい端末で管理者ログインすると、その1台が管理者端末になる）</span>
+                <button onClick={cancelAdminAllow} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>取消</button></>
+              : <button onClick={allowAdminNext} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.pri, border: `1px solid ${C.line}` }}>＋ 次の1台を許可（30分）</button>}
           </div>
           {(adminDevs || []).map(d => (
             <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 98px", fontSize: 12 }}>

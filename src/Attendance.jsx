@@ -100,21 +100,37 @@ export function AttendanceCardButton({ row, userName, att, onMsg }) {
   if (!att || row.worker !== userName || normDate(row.date) !== isoDate()) return null;
   const mine = att.records.filter(r => r.rowId === row.id).sort((a, b) => a.inAt.localeCompare(b.inAt));
   const openHere = mine.find(r => !r.outAt);
+  const otherOpen = att.open && !openHere;
   const go = async kind => {
     setBusy(true);
     try { const r = await att.punch(kind, row, ""); onMsg?.(kind === "in" ? `出勤 ${r.inAt}` : `退勤 ${r.outAt}`); }
     catch (e) { onMsg?.("⚠ " + (e.message || e)); }
     setBusy(false);
   };
-  const otherOpen = att.open && !openHere;
+  // 端末が未登録のときは、その場で登録できる（登録のあと、もう一度「出勤」を押す）
+  const bindHere = async () => {
+    setBusy(true);
+    try { await att.bind(); onMsg?.("端末を登録しました。もう一度「出勤」を押してね"); }
+    catch (e) { onMsg?.("⚠ " + (e.message || e)); }
+    setBusy(false);
+  };
+  // 押せないときは、理由を必ず表示する
+  const reason = att.status === "loading" ? "端末を確認中…"
+    : att.status === "other" ? "別の端末で登録済み（管理者に端末解除を頼んでね）"
+    : att.status === "error" ? "端末情報を読めません（Firestoreルールを確認）"
+    : openHere ? "" : otherOpen ? "他の現場で勤務中" : "";
+  const ok = att.status === "ok";
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
       {mine.length > 0 && <div style={{ color: C.sub, fontSize: 10 }}>{mine.map(r => `${r.inAt}〜${r.outAt || "勤務中"}`).join(" / ")}</div>}
-      {openHere
-        ? <button disabled={busy} onClick={() => go("out")} style={{ ...btn, background: C.ng, color: "#fff", fontSize: 12 }}>⏱ 退勤</button>
-        : <button disabled={busy || otherOpen || att.status !== "ok"} onClick={() => go("in")}
-            title={att.status !== "ok" ? "出退勤タブで端末を登録してね" : otherOpen ? "他の現場で勤務中" : ""}
-            style={{ ...btn, background: "#0a1f0a", color: "#a5d6a7", border: "1px solid #1a3a1a", fontSize: 12, opacity: busy || otherOpen || att.status !== "ok" ? 0.4 : 1 }}>⏱ 出勤</button>}
+      {att.status === "unbound"
+        ? <button disabled={busy} onClick={bindHere} style={{ ...btn, background: "#0d2030", color: C.pri, border: `1px solid ${C.pri}`, fontSize: 12 }}>📱 この端末を登録</button>
+        : openHere
+          ? <button disabled={busy || !ok} onClick={() => go("out")} style={{ ...btn, background: C.ng, color: "#fff", fontSize: 12, opacity: busy || !ok ? 0.4 : 1 }}>⏱ 退勤</button>
+          : <button disabled={busy || otherOpen || !ok} onClick={() => go("in")}
+              style={{ ...btn, background: "#0a1f0a", color: "#a5d6a7", border: "1px solid #1a3a1a", fontSize: 12, opacity: busy || otherOpen || !ok ? 0.4 : 1 }}>⏱ 出勤</button>}
+      {att.status === "unbound" && <div style={{ color: C.warn, fontSize: 10 }}>先に端末の登録が必要</div>}
+      {reason && <div style={{ color: C.warn, fontSize: 10, maxWidth: 170, textAlign: "right" }}>{reason}</div>}
     </div>
   );
 }

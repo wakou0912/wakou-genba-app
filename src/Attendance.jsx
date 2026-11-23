@@ -203,21 +203,8 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const [month, setMonth] = useState(isoDate().slice(0, 7));
   const [who, setWho] = useState("全員");
   const [editing, setEditing] = useState(undefined);
-  const [devs, setDevs] = useState({});
-  const [devTick, setDevTick] = useState(0);
-  const [pend, setPend] = useState({});
-  const [allow, setAllow] = useState({});
-  const [adminDevs, setAdminDevs] = useState(undefined);
   const st = useAttendanceMonth(month);
   const [copy, setCopy] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC)).then(s => alive && setAdminDevs(devicesOf(s.exists() ? s.data() : null))).catch(() => alive && setAdminDevs(null));
-    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null), allowOf(s.exists() ? s.data() : null)]).catch(() => [w, null, [], null])))
-      .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); setAllow(Object.fromEntries(a.map(x => [x[0], x[3]]))); });
-    return () => { alive = false; };
-  }, [workers, devTick]);
 
   const all = st.records;
   const live = all.filter(isLive);
@@ -232,13 +219,6 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const fail = e => onMsg?.("⚠ " + (e.message || e));
   const del = async r => { try { await saveRecord({ ...r, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); onMsg?.("ゴミ箱へ移動しました"); } catch (e) { fail(e); } };
   const restore = async r => { try { await saveRecord({ ...r, deletedAt: null, updatedAt: new Date().toISOString() }); onMsg?.("戻しました"); } catch (e) { fail(e); } };
-  const approve = async (w, deviceId) => { try { await approveDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を承認しました`); } catch (e) { fail(e); setDevTick(x => x + 1); } };
-  const allowNext = async w => { try { await allowNextDevice(w, 30); setDevTick(x => x + 1); onMsg?.(`${w} の次の1台を30分だけ許可しました`); } catch (e) { fail(e); } };
-  const cancelAllowing = async w => { try { await cancelAllow(w); setDevTick(x => x + 1); onMsg?.(`${w} の許可を取り消しました`); } catch (e) { fail(e); } };
-  const addAdminDev = async () => { try { await registerAdminDevice(); setDevTick(x => x + 1); onMsg?.("この端末を管理者端末に登録しました"); } catch (e) { fail(e); } };
-  const delAdminDev = async id => { try { await unbindAdminDevice(id); setDevTick(x => x + 1); onMsg?.("管理者端末を1台解除しました"); } catch (e) { fail(e); } };
-  const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
-  const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
 
   const showText = (title, text) => {
     try { navigator.clipboard.writeText(text).then(() => onMsg?.(title + "をコピーしました"), () => setCopy({ title, text })); } catch { setCopy({ title, text }); }
@@ -310,6 +290,58 @@ export function AttendanceAdminTab({ workers, onMsg }) {
         </table>
       </div>
 
+      {trash.length > 0 && (
+        <div style={card}>
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>ゴミ箱（{trash.length}件・30日を過ぎると表示されなくなる）</div>
+          {trash.map(r => (
+            <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", fontSize: 13 }}>
+              <span style={{ flex: 1 }}>{dayLabel(r.date)} {r.worker} {r.inAt}〜{r.outAt || ""}</span>
+              <button onClick={() => restore(r)} style={{ ...btn, padding: "4px 10px", background: "transparent", color: C.pri, border: `1px solid ${C.line}` }}>戻す</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing !== undefined && <EditModal rec={editing} workers={workers} isAdmin defaultWorker={workers[0]} onClose={() => setEditing(undefined)} onDone={done} onError={fail} />}
+      {copy && (
+        <Modal onClose={() => setCopy(null)}>
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>{copy.title}（選択してコピー）</div>
+          <textarea readOnly value={copy.text} onClick={e => e.target.select()} style={{ ...inp, width: "100%", minHeight: 160, fontFamily: "monospace", fontSize: 11 }} />
+          <button onClick={() => setCopy(null)} style={{ ...btn, marginTop: 8, background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>閉じる</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// 管理者タブ「端末管理」：管理者端末の登録、作業員ごとの端末（許可・承認・解除）
+export function DeviceAdminTab({ workers, onMsg }) {
+  const [devs, setDevs] = useState({});
+  const [devTick, setDevTick] = useState(0);
+  const [pend, setPend] = useState({});
+  const [allow, setAllow] = useState({});
+  const [adminDevs, setAdminDevs] = useState(undefined);
+  const fail = e => onMsg?.("⚠ " + (e.message || e));
+
+  useEffect(() => {
+    let alive = true;
+    getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC)).then(s => alive && setAdminDevs(devicesOf(s.exists() ? s.data() : null))).catch(() => alive && setAdminDevs(null));
+    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null), allowOf(s.exists() ? s.data() : null)]).catch(() => [w, null, [], null])))
+      .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); setAllow(Object.fromEntries(a.map(x => [x[0], x[3]]))); });
+    return () => { alive = false; };
+  }, [workers, devTick]);
+
+
+  const approve = async (w, deviceId) => { try { await approveDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を承認しました`); } catch (e) { fail(e); setDevTick(x => x + 1); } };
+  const allowNext = async w => { try { await allowNextDevice(w, 30); setDevTick(x => x + 1); onMsg?.(`${w} の次の1台を30分だけ許可しました`); } catch (e) { fail(e); } };
+  const cancelAllowing = async w => { try { await cancelAllow(w); setDevTick(x => x + 1); onMsg?.(`${w} の許可を取り消しました`); } catch (e) { fail(e); } };
+  const addAdminDev = async () => { try { await registerAdminDevice(); setDevTick(x => x + 1); onMsg?.("この端末を管理者端末に登録しました"); } catch (e) { fail(e); } };
+  const delAdminDev = async id => { try { await unbindAdminDevice(id); setDevTick(x => x + 1); onMsg?.("管理者端末を1台解除しました"); } catch (e) { fail(e); } };
+  const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
+  const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
+
+  return (
+    <div style={{ padding: 16, maxWidth: 720, margin: "0 auto", color: C.ink }}>
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録状況</div>
         <div style={{ padding: "6px 0 10px", marginBottom: 6, borderBottom: `1px solid ${C.line}`, fontSize: 13 }}>
@@ -353,27 +385,6 @@ export function AttendanceAdminTab({ workers, onMsg }) {
           </div>
         ))}
       </div>
-
-      {trash.length > 0 && (
-        <div style={card}>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>ゴミ箱（{trash.length}件・30日を過ぎると表示されなくなる）</div>
-          {trash.map(r => (
-            <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", fontSize: 13 }}>
-              <span style={{ flex: 1 }}>{dayLabel(r.date)} {r.worker} {r.inAt}〜{r.outAt || ""}</span>
-              <button onClick={() => restore(r)} style={{ ...btn, padding: "4px 10px", background: "transparent", color: C.pri, border: `1px solid ${C.line}` }}>戻す</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {editing !== undefined && <EditModal rec={editing} workers={workers} isAdmin defaultWorker={workers[0]} onClose={() => setEditing(undefined)} onDone={done} onError={fail} />}
-      {copy && (
-        <Modal onClose={() => setCopy(null)}>
-          <div style={{ fontWeight: 800, marginBottom: 8 }}>{copy.title}（選択してコピー）</div>
-          <textarea readOnly value={copy.text} onClick={e => e.target.select()} style={{ ...inp, width: "100%", minHeight: 160, fontFamily: "monospace", fontSize: 11 }} />
-          <button onClick={() => setCopy(null)} style={{ ...btn, marginTop: 8, background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>閉じる</button>
-        </Modal>
-      )}
     </div>
   );
 }

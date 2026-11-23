@@ -7,11 +7,11 @@
 //
 // ■ 打刻レコード
 //   { id, worker, date:'YYYY-MM-DD', inAt:'HH:MM', outAt:'HH:MM'|null,
-//     rowId: 日報row.id | null(=現場未紐付け), genba: 紐付け時の現場名スナップショット,
+//   ※現場（日報）とは紐付けない。1日1回の出勤・退勤を記録する。
 //     breakMin, inGeo:{lat,lng,acc}|null, outGeo, manual, note, deletedAt:ISO|null, createdAt, updatedAt }
 //
 // ■ 注意
-//   Firestore への書き込みは、打刻・紐付け・修正・端末登録などユーザーの明示操作のときだけ。
+//   Firestore への書き込みは、打刻・修正・端末登録などユーザーの明示操作のときだけ。
 //   「無ければ作る」系の自動書き込みはしない（CLAUDE.md のデータ消失事故の教訓）。
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
@@ -125,8 +125,8 @@ export function useMyAttendance(userName) {
     setDev({ loading: false, data: { deviceId: devId }, error: null });
   };
 
-  // kind: "in" | "out" / row: 日報カード（無ければ現場未定）/ memo: 緊急時メモ
-  const punch = async (kind, row, memo) => {
+  // kind: "in" | "out" / memo: 任意のメモ
+  const punch = async (kind, memo) => {
     if (status !== "ok") throw new Error("この端末は登録されていません");
     const now = new Date();
     const geo = await getGeo();
@@ -134,7 +134,6 @@ export function useMyAttendance(userName) {
       if (open) throw new Error("すでに勤務中です");
       const rec = {
         id: newId(), worker: userName, date: isoDate(now), inAt: hm(now), outAt: null,
-        rowId: row ? row.id : null, genba: row ? row.genba || "" : "",
         breakMin: 0, inGeo: geo, outGeo: null, manual: false, note: (memo || "").trim(),
         deletedAt: null, createdAt: now.toISOString(), updatedAt: now.toISOString(),
       };

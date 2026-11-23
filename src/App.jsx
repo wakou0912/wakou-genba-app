@@ -425,13 +425,18 @@ function computeAke(row, allRows) {
 
 // 日付ごとのグループ（現場がない日も含めて、最初〜最後の日付を1日ずつ全部出す）
 // 出退勤だけある日（現場日報なし）も日付として出す
-function buildDayGroups(rows, attRecords, fill=true) {
+function buildDayGroups(rows, attRecords, fill=true, month="") {
   const map = new Map();
   rows.forEach(r=>{ if(!map.has(r.date)) map.set(r.date,[]); map.get(r.date).push(r); });
   if (fill) (attRecords||[]).filter(isLive).forEach(a=>{
     const k=a.date.replace(/-/g,"/");
     if(!map.has(k)) map.set(k,[]);
   });
+  // 月を選んでいるときは、その月の1日〜末日を全部出す（月初・月末に日報がなくても日付を出す）
+  if (fill && /^\d{4}[/-]\d{1,2}$/.test(month||"")) {
+    const [y,m]=month.split(/[/-]/).map(Number);
+    for (let d=new Date(y,m-1,1); d.getMonth()===m-1; d.setDate(d.getDate()+1)) { const k=fmtDate(d); if(!map.has(k)) map.set(k,[]); }
+  }
   const keys=[...map.keys()].filter(k=>parseDate(k)).sort();
   if (fill && keys.length>1) {
     const first=parseDate(keys[0]), last=parseDate(keys[keys.length-1]);
@@ -2204,7 +2209,7 @@ td{padding:4px 6px;font-size:9px;vertical-align:top;border-bottom:none}
         {(()=>{
           const noFilter=!searchGenba&&!searchEigyo&&!searchDateFrom&&!searchDateTo;
           const myAtt=(att.records||[]).filter(a=>a.worker===user.name&&(!filterMonth||a.date.startsWith(filterMonth.replace("/","-"))));
-          const grp=buildDayGroups(filtered,myAtt,noFilter);
+          const grp=buildDayGroups(filtered,myAtt,noFilter,filterMonth);
           return grp.map(({date,rows:dr})=>{
             const dd=parseDate(date);
             const dy=dr.reduce((s,r)=>s+(parseFloat(r.yotei)||0),0);
@@ -3319,7 +3324,7 @@ ${pdfCols.ake?`<td></td>`:""}
           {(()=>{
             const noFilter=!searchGenba&&!searchEigyo&&!searchDateFrom&&!searchDateTo&&!filterAke&&!filterDuplicate;
             const attW=(attAdmin.records||[]).filter(a=>filterWorker==="全員"||a.worker===filterWorker);
-            const grp=buildDayGroups(duplicateGenbaRows,attW,noFilter);
+            const grp=buildDayGroups(duplicateGenbaRows,attW,noFilter,filterMonth);
             return grp.map(({date,rows:dr})=>{
               const dd=parseDate(date);
               if(dr.length===0){

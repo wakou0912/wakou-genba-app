@@ -123,12 +123,29 @@ export const rejectDevice = (worker, deviceId) => runTransaction(firestore, asyn
   writeDev(tx, worker, devices, pending.filter(d => d.deviceId !== deviceId));
 });
 
+// 管理者端末：ここに登録された端末は、どの作業員の名前でもログイン・打刻できる
+// 保存先は attendance_devices/_admin（作業員名は「_」で始められないので、名前とぶつからない）
+export const ADMIN_DEV_DOC = "_admin";
+export const myDeviceId = () => getDeviceId();
+export const registerAdminDevice = () => runTransaction(firestore, async tx => {
+  const id = getDeviceId();
+  const { devices } = await readDev(tx, ADMIN_DEV_DOC);
+  if (devices.some(d => d.deviceId === id)) return;
+  tx.set(devRef(ADMIN_DEV_DOC), { worker: ADMIN_DEV_DOC, devices: [...devices, { deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending: [] }, { merge: true });
+});
+export const unbindAdminDevice = deviceId => runTransaction(firestore, async tx => {
+  const { devices } = await readDev(tx, ADMIN_DEV_DOC);
+  tx.set(devRef(ADMIN_DEV_DOC), { worker: ADMIN_DEV_DOC, devices: devices.filter(d => d.deviceId !== deviceId), pending: [] }, { merge: true });
+});
+
 // ログイン時の端末チェック（作業員ログイン用）
 //  ok        … この端末は登録済み、または1台目として今登録した
 //  requested … 管理者の承認待ち
 //  blocked   … 別の端末が登録済み（追加の依頼が必要）
 export const checkLoginDevice = worker => runTransaction(firestore, async tx => {
   const id = getDeviceId();
+  const admin = await readDev(tx, ADMIN_DEV_DOC);
+  if (admin.devices.some(d => d.deviceId === id)) return "ok"; // 管理者端末は誰でもOK（この端末を作業員の1台目にはしない）
   const { devices, pending, allow } = await readDev(tx, worker);
   if (devices.some(d => d.deviceId === id)) return "ok";
   // 管理者が「次の1台を許可」していれば、この端末を登録して許可は使い切り
@@ -182,16 +199,16 @@ export function useMyAttendance(userName) {
   const devId = getDeviceId();
   useEffect(() => {
     let alive = true;
-    getDoc(doc(firestore, "attendance_devices", userName))
-      .then(s => alive && setDev({ loading: false, data: s.exists() ? s.data() : null, error: null }))
+    Promise.all([getDoc(doc(firestore, "attendance_devices", userName)), getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC))])
+      .then(([s, a]) => alive && setDev({ loading: false, data: s.exists() ? s.data() : null, isAdminDev: devicesOf(a.exists() ? a.data() : null).some(d => d.deviceId === devId), error: null }))
       .catch(e => alive && setDev({ loading: false, data: null, error: e.message || String(e) }));
     return () => { alive = false; };
-  }, [userName, devTick]);
+  }, [userName, devTick, devId]);
   const devices = devicesOf(dev.data);
   const pending = pendingOf(dev.data);
   // ok=この端末は登録済み / unbound=まだ登録できる / full=自動登録の枠いっぱい（追加は管理者に依頼） / requested=管理者の承認待ち
   const status = dev.loading ? "loading" : dev.error ? "error"
-    : devices.some(d => d.deviceId === devId) ? "ok"
+    : dev.isAdminDev || devices.some(d => d.deviceId === devId) ? "ok"
     : pending.some(d => d.deviceId === devId) ? "requested"
     : devices.length < MAX_DEVICES ? "unbound" : "full";
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, devicesOf, pendingOf, allowOf, unbindDevice, approveDevice, rejectDevice, allowNextDevice, cancelAllow } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, devicesOf, pendingOf, allowOf, unbindDevice, approveDevice, rejectDevice, allowNextDevice, cancelAllow, ADMIN_DEV_DOC, myDeviceId, registerAdminDevice, unbindAdminDevice } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -207,11 +207,13 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const [devTick, setDevTick] = useState(0);
   const [pend, setPend] = useState({});
   const [allow, setAllow] = useState({});
+  const [adminDevs, setAdminDevs] = useState(undefined);
   const st = useAttendanceMonth(month);
   const [copy, setCopy] = useState(null);
 
   useEffect(() => {
     let alive = true;
+    getDoc(doc(firestore, "attendance_devices", ADMIN_DEV_DOC)).then(s => alive && setAdminDevs(devicesOf(s.exists() ? s.data() : null))).catch(() => alive && setAdminDevs(null));
     Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null), allowOf(s.exists() ? s.data() : null)]).catch(() => [w, null, [], null])))
       .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); setAllow(Object.fromEntries(a.map(x => [x[0], x[3]]))); });
     return () => { alive = false; };
@@ -233,6 +235,8 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const approve = async (w, deviceId) => { try { await approveDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を承認しました`); } catch (e) { fail(e); setDevTick(x => x + 1); } };
   const allowNext = async w => { try { await allowNextDevice(w, 30); setDevTick(x => x + 1); onMsg?.(`${w} の次の1台を30分だけ許可しました`); } catch (e) { fail(e); } };
   const cancelAllowing = async w => { try { await cancelAllow(w); setDevTick(x => x + 1); onMsg?.(`${w} の許可を取り消しました`); } catch (e) { fail(e); } };
+  const addAdminDev = async () => { try { await registerAdminDevice(); setDevTick(x => x + 1); onMsg?.("この端末を管理者端末に登録しました"); } catch (e) { fail(e); } };
+  const delAdminDev = async id => { try { await unbindAdminDevice(id); setDevTick(x => x + 1); onMsg?.("管理者端末を1台解除しました"); } catch (e) { fail(e); } };
   const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
   const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
 
@@ -308,6 +312,19 @@ export function AttendanceAdminTab({ workers, onMsg }) {
 
       <div style={card}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録状況</div>
+        <div style={{ padding: "6px 0 10px", marginBottom: 6, borderBottom: `1px solid ${C.line}`, fontSize: 13 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 90, fontWeight: 700 }}>管理者端末</span>
+            <span style={{ color: adminDevs && adminDevs.length ? C.ok : C.sub, flex: 1 }}>{adminDevs === null ? "確認できません" : adminDevs === undefined ? "確認中…" : adminDevs.length ? `${adminDevs.length}台（どの作業員にもログインできる）` : "未登録"}</span>
+            {adminDevs && !adminDevs.some(d => d.deviceId === myDeviceId()) && <button onClick={addAdminDev} style={{ ...btn, padding: "3px 10px", background: C.pri, color: "#080e14" }}>この端末を登録</button>}
+          </div>
+          {(adminDevs || []).map(d => (
+            <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 98px", fontSize: 12 }}>
+              <span style={{ flex: 1, color: C.sub }}>{d.label || "端末"}{d.boundAt ? `\u3000${dayLabel(d.boundAt.slice(0, 10))}に登録` : ""}{d.deviceId === myDeviceId() ? "\u3000（この端末）" : ""}&emsp;<span style={{ fontSize: 10 }}>…{d.deviceId.slice(-5)}</span></span>
+              <button onClick={() => delAdminDev(d.deviceId)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.ng, border: `1px solid ${C.line}` }}>解除</button>
+            </div>
+          ))}
+        </div>
         {workers.map(w => (
           <div key={w} style={{ padding: "5px 0", fontSize: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

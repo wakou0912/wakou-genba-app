@@ -86,11 +86,14 @@ function deviceLabel() {
   return /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Windows/.test(u) ? "Windows" : /Mac/.test(u) ? "Mac" : "端末";
 }
 // 承認待ちの端末（4台目以降の追加依頼）
+// 管理者が「次の1台を許可」した期限（まだ有効なときだけ値を返す）
+export const allowOf = data => (data && data.allowUntil && new Date(data.allowUntil).getTime() > Date.now() ? data.allowUntil : null);
 export const pendingOf = data => (data && Array.isArray(data.pending) ? data.pending : []);
 const devRef = worker => doc(firestore, "attendance_devices", worker);
 // 端末ドキュメントを書く（devices と pending は必ずセットで書いて、片方を消さない）
-const writeDev = (tx, worker, devices, pending) => tx.set(devRef(worker), { worker, devices, pending });
-const readDev = async (tx, worker) => { const s = await tx.get(devRef(worker)); const d = s.exists() ? s.data() : null; return { devices: devicesOf(d), pending: pendingOf(d) }; };
+// merge:true … 管理者が出した「次の1台を許可」（allowUntil）を消さないため
+const writeDev = (tx, worker, devices, pending) => tx.set(devRef(worker), { worker, devices, pending }, { merge: true });
+const readDev = async (tx, worker) => { const s = await tx.get(devRef(worker)); const d = s.exists() ? s.data() : null; return { devices: devicesOf(d), pending: pendingOf(d), allow: allowOf(d) }; };
 
 // 管理者用：端末を1台だけ解除する
 export const unbindDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
@@ -105,6 +108,15 @@ export const approveDevice = (worker, deviceId) => runTransaction(firestore, asy
   const next = devices.some(d => d.deviceId === deviceId) ? devices : [...devices, { deviceId, boundAt: new Date().toISOString(), label: req.label || "" }];
   writeDev(tx, worker, next, pending.filter(d => d.deviceId !== deviceId));
 });
+// 管理者用：依頼がなくても「次にログインした1台」を登録できるようにする（期限つき・1回だけ）
+export const allowNextDevice = (worker, minutes = 30) => runTransaction(firestore, async tx => {
+  const { devices, pending } = await readDev(tx, worker);
+  tx.set(devRef(worker), { worker, devices, pending, allowUntil: new Date(Date.now() + minutes * 60000).toISOString() }, { merge: true });
+});
+export const cancelAllow = worker => runTransaction(firestore, async tx => {
+  const { devices, pending } = await readDev(tx, worker);
+  tx.set(devRef(worker), { worker, devices, pending, allowUntil: null }, { merge: true });
+});
 // 管理者用：追加依頼を却下する
 export const rejectDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
   const { devices, pending } = await readDev(tx, worker);
@@ -117,8 +129,10 @@ export const rejectDevice = (worker, deviceId) => runTransaction(firestore, asyn
 //  blocked   … 別の端末が登録済み（追加の依頼が必要）
 export const checkLoginDevice = worker => runTransaction(firestore, async tx => {
   const id = getDeviceId();
-  const { devices, pending } = await readDev(tx, worker);
+  const { devices, pending, allow } = await readDev(tx, worker);
   if (devices.some(d => d.deviceId === id)) return "ok";
+  // 管理者が「次の1台を許可」していれば、この端末を登録して許可は使い切り
+  if (allow) { tx.set(devRef(worker), { worker, devices: [...devices, { deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending: pending.filter(d => d.deviceId !== id), allowUntil: null }, { merge: true }); return "ok"; }
   if (devices.length === 0) { writeDev(tx, worker, [{ deviceId: id, boundAt: new Date().toISOString(), label: deviceLabel() }], pending.filter(d => d.deviceId !== id)); return "ok"; }
   return pending.some(d => d.deviceId === id) ? "requested" : "blocked";
 });

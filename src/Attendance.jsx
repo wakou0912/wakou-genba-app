@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, devicesOf, pendingOf, unbindDevice, approveDevice, rejectDevice } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, devicesOf, pendingOf, allowOf, unbindDevice, approveDevice, rejectDevice, allowNextDevice, cancelAllow } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -206,13 +206,14 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const [devs, setDevs] = useState({});
   const [devTick, setDevTick] = useState(0);
   const [pend, setPend] = useState({});
+  const [allow, setAllow] = useState({});
   const st = useAttendanceMonth(month);
   const [copy, setCopy] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null)]).catch(() => [w, null, []])))
-      .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); });
+    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null), allowOf(s.exists() ? s.data() : null)]).catch(() => [w, null, [], null])))
+      .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); setAllow(Object.fromEntries(a.map(x => [x[0], x[3]]))); });
     return () => { alive = false; };
   }, [workers, devTick]);
 
@@ -230,6 +231,8 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const del = async r => { try { await saveRecord({ ...r, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); onMsg?.("ゴミ箱へ移動しました"); } catch (e) { fail(e); } };
   const restore = async r => { try { await saveRecord({ ...r, deletedAt: null, updatedAt: new Date().toISOString() }); onMsg?.("戻しました"); } catch (e) { fail(e); } };
   const approve = async (w, deviceId) => { try { await approveDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を承認しました`); } catch (e) { fail(e); setDevTick(x => x + 1); } };
+  const allowNext = async w => { try { await allowNextDevice(w, 30); setDevTick(x => x + 1); onMsg?.(`${w} の次の1台を30分だけ許可しました`); } catch (e) { fail(e); } };
+  const cancelAllowing = async w => { try { await cancelAllow(w); setDevTick(x => x + 1); onMsg?.(`${w} の許可を取り消しました`); } catch (e) { fail(e); } };
   const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
   const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
 
@@ -317,6 +320,12 @@ export function AttendanceAdminTab({ workers, onMsg }) {
                 <button onClick={() => unbind(w, d.deviceId)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.ng, border: `1px solid ${C.line}` }}>解除</button>
               </div>
             ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0 3px 98px", fontSize: 12 }}>
+              {allow[w]
+                ? <><span style={{ flex: 1, color: C.warn }}>🔓 許可中（{new Date(allow[w]).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}まで・次にログインした1台が登録される）</span>
+                  <button onClick={() => cancelAllowing(w)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>取消</button></>
+                : <button onClick={() => allowNext(w)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.pri, border: `1px solid ${C.line}` }}>＋ 次の1台を許可（30分）</button>}
+            </div>
             {(pend[w] || []).map(d => (
               <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0 3px 98px", fontSize: 12 }}>
                 <span style={{ flex: 1, color: C.ng }}>🙋 追加依頼：{d.label || "端末"}{d.requestedAt ? `\u3000${dayLabel(d.requestedAt.slice(0, 10))}` : ""}&emsp;<span style={{ fontSize: 10 }}>…{d.deviceId.slice(-5)}</span></span>

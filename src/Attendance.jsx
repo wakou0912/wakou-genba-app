@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
-import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, MAX_DEVICES, devicesOf, unbindDevice } from "./attendanceData";
+import { isoDate, normDate, hm, pad, newId, WD, shiftYm, calc, fmtHM, fmtH, isLive, isInTrash, saveRecord, useAttendanceMonth, MAX_DEVICES, devicesOf, pendingOf, unbindDevice, approveDevice, rejectDevice } from "./attendanceData";
 
 // ─── 見た目 ───────────────────────────────────────
 const C = { bg: "#0d1520", line: "#1a2634", sub: "#546e7a", ink: "#cfd8dc", pri: "#4fc3f7", ok: "#66bb6a", ng: "#ef5350", warn: "#ffb74d", night: "#b39ddb" };
@@ -126,7 +126,18 @@ export function AttendanceWorkerTab({ userName, att, onMsg }) {
         <div style={{ fontWeight: 800, marginBottom: 8 }}>端末の登録</div>
         {att.status === "loading" && <div style={{ color: C.sub, fontSize: 12 }}>確認中…</div>}
         {att.status === "ok" && <div style={{ color: C.ok, fontSize: 12 }}>✓ この端末は {userName} の端末として登録済み（{att.devices.length}/{MAX_DEVICES}台）</div>}
-        {att.status === "full" && <div style={{ color: C.ng, fontSize: 12 }}>すでに {MAX_DEVICES} 台が登録されていて、この端末は登録できません。端末を変えたときは、管理者に「端末解除」を頼んでね。</div>}
+        {att.status === "full" && (
+          <>
+            <div style={{ color: C.ng, fontSize: 12, marginBottom: 8 }}>すでに {MAX_DEVICES} 台が登録されていて、この端末は自分では登録できません。古い端末を解除してもらうか、管理者に追加を依頼してね。</div>
+            <button onClick={() => run(async () => { await att.requestAdd(); onMsg?.("管理者に追加を依頼しました"); })} style={{ ...btn, background: C.pri, color: "#080e14" }}>管理者にこの端末の追加を依頼</button>
+          </>
+        )}
+        {att.status === "requested" && (
+          <>
+            <div style={{ color: C.warn || C.sub, fontSize: 12, marginBottom: 8 }}>⏳ 管理者の承認待ちです。承認されたら打刻できるようになります（承認後は下のボタンで確認）。</div>
+            <button onClick={() => { att.refreshDevice(); onMsg?.("状態を確認しています"); }} style={{ ...btn, background: "transparent", color: C.pri, border: `1px solid ${C.line}` }}>承認されたか確認</button>
+          </>
+        )}
         {att.status === "error" && <div style={{ color: C.ng, fontSize: 12 }}>端末情報を読めませんでした: {att.devError}</div>}
         {att.status === "unbound" && (
           <>
@@ -194,13 +205,14 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const [editing, setEditing] = useState(undefined);
   const [devs, setDevs] = useState({});
   const [devTick, setDevTick] = useState(0);
+  const [pend, setPend] = useState({});
   const st = useAttendanceMonth(month);
   const [copy, setCopy] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null)]).catch(() => [w, null])))
-      .then(a => alive && setDevs(Object.fromEntries(a)));
+    Promise.all(workers.map(w => getDoc(doc(firestore, "attendance_devices", w)).then(s => [w, devicesOf(s.exists() ? s.data() : null), pendingOf(s.exists() ? s.data() : null)]).catch(() => [w, null, []])))
+      .then(a => { if (!alive) return; setDevs(Object.fromEntries(a.map(x => [x[0], x[1]]))); setPend(Object.fromEntries(a.map(x => [x[0], x[2]]))); });
     return () => { alive = false; };
   }, [workers, devTick]);
 
@@ -217,6 +229,8 @@ export function AttendanceAdminTab({ workers, onMsg }) {
   const fail = e => onMsg?.("⚠ " + (e.message || e));
   const del = async r => { try { await saveRecord({ ...r, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); onMsg?.("ゴミ箱へ移動しました"); } catch (e) { fail(e); } };
   const restore = async r => { try { await saveRecord({ ...r, deletedAt: null, updatedAt: new Date().toISOString() }); onMsg?.("戻しました"); } catch (e) { fail(e); } };
+  const approve = async (w, deviceId) => { try { await approveDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を承認しました`); } catch (e) { fail(e); setDevTick(x => x + 1); } };
+  const reject = async (w, deviceId) => { try { await rejectDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の依頼を却下しました`); } catch (e) { fail(e); } };
   const unbind = async (w, deviceId) => { try { await unbindDevice(w, deviceId); setDevTick(x => x + 1); onMsg?.(`${w} の端末を1台解除しました`); } catch (e) { fail(e); } };
 
   const showText = (title, text) => {
@@ -301,6 +315,13 @@ export function AttendanceAdminTab({ workers, onMsg }) {
               <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 98px", fontSize: 12 }}>
                 <span style={{ flex: 1, color: C.sub }}>{d.label || "端末"}{d.boundAt ? `\u3000${dayLabel(d.boundAt.slice(0, 10))}に登録` : ""}&emsp;<span style={{ fontSize: 10 }}>…{d.deviceId.slice(-5)}</span></span>
                 <button onClick={() => unbind(w, d.deviceId)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.ng, border: `1px solid ${C.line}` }}>解除</button>
+              </div>
+            ))}
+            {(pend[w] || []).map(d => (
+              <div key={d.deviceId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0 3px 98px", fontSize: 12 }}>
+                <span style={{ flex: 1, color: C.ng }}>🙋 追加依頼：{d.label || "端末"}{d.requestedAt ? `\u3000${dayLabel(d.requestedAt.slice(0, 10))}` : ""}&emsp;<span style={{ fontSize: 10 }}>…{d.deviceId.slice(-5)}</span></span>
+                <button onClick={() => approve(w, d.deviceId)} style={{ ...btn, padding: "3px 10px", background: C.ok, color: "#080e14" }}>承認</button>
+                <button onClick={() => reject(w, d.deviceId)} style={{ ...btn, padding: "3px 10px", background: "transparent", color: C.sub, border: `1px solid ${C.line}` }}>却下</button>
               </div>
             ))}
           </div>

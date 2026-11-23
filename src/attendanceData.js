@@ -3,7 +3,8 @@
 //
 // ■ 保存先（現場日報の db/main には一切書かない。別コレクション）
 //   attendance/{yyyy-mm}/records/{id}  … 打刻1件ずつ（1件=1ドキュメント。配列ごと上書きしない）
-//   attendance_devices/{作業員名}       … 端末の紐付け {worker, devices:[{deviceId, boundAt, label}]}（1人 MAX_DEVICES 台まで）
+//   attendance_devices/{作業員名}       … 端末の紐付け {worker, devices:[{deviceId, boundAt, label}], pending:[{deviceId, label, requestedAt}]}
+//                                         自分で登録できるのは MAX_DEVICES 台まで。それ以上は pending に依頼 → 管理者が承認
 //
 // ■ 打刻レコード
 //   { id, worker, date:'YYYY-MM-DD', inAt:'HH:MM', outAt:'HH:MM'|null,
@@ -84,15 +85,31 @@ function deviceLabel() {
   const u = (typeof navigator !== "undefined" && navigator.userAgent) || "";
   return /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Windows/.test(u) ? "Windows" : /Mac/.test(u) ? "Mac" : "端末";
 }
+// 承認待ちの端末（4台目以降の追加依頼）
+export const pendingOf = data => (data && Array.isArray(data.pending) ? data.pending : []);
+const devRef = worker => doc(firestore, "attendance_devices", worker);
+// 端末ドキュメントを書く（devices と pending は必ずセットで書いて、片方を消さない）
+const writeDev = (tx, worker, devices, pending) => tx.set(devRef(worker), { worker, devices, pending });
+const readDev = async (tx, worker) => { const s = await tx.get(devRef(worker)); const d = s.exists() ? s.data() : null; return { devices: devicesOf(d), pending: pendingOf(d) }; };
+
 // 管理者用：端末を1台だけ解除する
-export const unbindDevice = (worker, deviceId) => {
-  const ref = doc(firestore, "attendance_devices", worker);
-  return runTransaction(firestore, async tx => {
-    const snap = await tx.get(ref);
-    const next = devicesOf(snap.exists() ? snap.data() : null).filter(d => d.deviceId !== deviceId);
-    tx.set(ref, { worker, devices: next });
-  });
-};
+export const unbindDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
+  const { devices, pending } = await readDev(tx, worker);
+  writeDev(tx, worker, devices.filter(d => d.deviceId !== deviceId), pending);
+});
+// 管理者用：追加依頼を承認する（3台を超えても登録できる）
+export const approveDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
+  const { devices, pending } = await readDev(tx, worker);
+  const req = pending.find(d => d.deviceId === deviceId);
+  if (!req) throw new Error("この依頼はもうありません（本人が取り下げたか、別の管理者が処理済み）");
+  const next = devices.some(d => d.deviceId === deviceId) ? devices : [...devices, { deviceId, boundAt: new Date().toISOString(), label: req.label || "" }];
+  writeDev(tx, worker, next, pending.filter(d => d.deviceId !== deviceId));
+});
+// 管理者用：追加依頼を却下する
+export const rejectDevice = (worker, deviceId) => runTransaction(firestore, async tx => {
+  const { devices, pending } = await readDev(tx, worker);
+  writeDev(tx, worker, devices, pending.filter(d => d.deviceId !== deviceId));
+});
 
 const DEV_KEY = "wakou-attendance-device";
 function getDeviceId() {
@@ -128,6 +145,7 @@ export function useMyAttendance(userName) {
   const open = records.find(r => !r.outAt) || null;
 
   const [dev, setDev] = useState({ loading: true, data: null, error: null });
+  const [devTick, setDevTick] = useState(0);
   const devId = getDeviceId();
   useEffect(() => {
     let alive = true;
@@ -135,24 +153,39 @@ export function useMyAttendance(userName) {
       .then(s => alive && setDev({ loading: false, data: s.exists() ? s.data() : null, error: null }))
       .catch(e => alive && setDev({ loading: false, data: null, error: e.message || String(e) }));
     return () => { alive = false; };
-  }, [userName]);
+  }, [userName, devTick]);
   const devices = devicesOf(dev.data);
-  // ok=この端末は登録済み / unbound=まだ登録できる / full=3台いっぱいで登録できない
-  const status = dev.loading ? "loading" : dev.error ? "error" : devices.some(d => d.deviceId === devId) ? "ok" : devices.length < MAX_DEVICES ? "unbound" : "full";
+  const pending = pendingOf(dev.data);
+  // ok=この端末は登録済み / unbound=まだ登録できる / full=3台いっぱい（追加は管理者に依頼） / requested=管理者の承認待ち
+  const status = dev.loading ? "loading" : dev.error ? "error"
+    : devices.some(d => d.deviceId === devId) ? "ok"
+    : pending.some(d => d.deviceId === devId) ? "requested"
+    : devices.length < MAX_DEVICES ? "unbound" : "full";
 
   const bind = async () => {
-    const ref = doc(firestore, "attendance_devices", userName);
     // 同時に2台が登録しても3台を超えないように、トランザクションで読んで書く
     const merged = await runTransaction(firestore, async tx => {
-      const snap = await tx.get(ref);
-      const cur = devicesOf(snap.exists() ? snap.data() : null);
-      if (cur.some(d => d.deviceId === devId)) return cur;
-      if (cur.length >= MAX_DEVICES) throw new Error(`すでに${MAX_DEVICES}台が登録されています。管理者に「端末解除」を頼んでね`);
+      const { devices: cur, pending: pen } = await readDev(tx, userName);
+      if (cur.some(d => d.deviceId === devId)) return { devices: cur, pending: pen };
+      if (cur.length >= MAX_DEVICES) throw new Error(`すでに${MAX_DEVICES}台が登録されています。「管理者に追加を依頼」を押してね`);
       const next = [...cur, { deviceId: devId, boundAt: new Date().toISOString(), label: deviceLabel() }];
-      tx.set(ref, { worker: userName, devices: next });
-      return next;
+      const pen2 = pen.filter(d => d.deviceId !== devId);
+      writeDev(tx, userName, next, pen2);
+      return { devices: next, pending: pen2 };
     });
-    setDev({ loading: false, data: { devices: merged }, error: null });
+    setDev({ loading: false, data: merged, error: null });
+  };
+
+  // 4台目以降：管理者に追加を依頼する（承認されるまで、この端末では打刻できない）
+  const requestAdd = async () => {
+    const merged = await runTransaction(firestore, async tx => {
+      const { devices: cur, pending: pen } = await readDev(tx, userName);
+      if (cur.some(d => d.deviceId === devId) || pen.some(d => d.deviceId === devId)) return { devices: cur, pending: pen };
+      const next = [...pen, { deviceId: devId, label: deviceLabel(), requestedAt: new Date().toISOString() }];
+      writeDev(tx, userName, cur, next);
+      return { devices: cur, pending: next };
+    });
+    setDev({ loading: false, data: merged, error: null });
   };
 
   // kind: "in" | "out" / memo: 任意のメモ
@@ -177,6 +210,6 @@ export function useMyAttendance(userName) {
     return next;
   };
 
-  return { records, open, status, devices, devError: dev.error, bind, punch, error: a.error || b.error };
+  return { records, open, status, devices, devError: dev.error, bind, requestAdd, refreshDevice: () => setDevTick(x => x + 1), punch, error: a.error || b.error };
 }
 
